@@ -91,7 +91,7 @@ export default function Header() {
                 {[
                   { label: 'Home', href: '/' },
                   { label: 'Shop', href: '/shop' },
-                  { label: 'New Arrivals', href: '/shop?sort=newest' },
+                  { label: 'New Arrivals', href: '/shop?sort=new' },
                   { label: 'About', href: '/about' },
                   { label: 'Contact', href: '/contact' },
                 ].map((link) => (
@@ -246,7 +246,7 @@ export default function Header() {
                   { label: 'Home', href: '/' },
                   { label: 'Shop', href: '/shop' },
                   { label: 'Categories', href: '/categories' },
-                  { label: 'New Arrivals', href: '/shop?sort=newest' },
+                  { label: 'New Arrivals', href: '/shop?sort=new' },
                   { label: 'Sale', href: '/sale' },
                   { label: 'About Us', href: '/about' },
                   { label: 'Contact', href: '/contact' },

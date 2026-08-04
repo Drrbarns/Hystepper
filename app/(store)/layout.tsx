@@ -18,7 +18,7 @@ export default function StoreLayout({
 }) {
   return (
     <CMSProvider>
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-gray-50 pb-20 lg:pb-0">
         <Header />
         {children}
         <Footer />

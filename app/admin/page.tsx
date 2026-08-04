@@ -60,7 +60,7 @@ export default function AdminDashboard() {
         //    Total Revenue, order count, or the revenue chart.
         const { data: ordersData, error: ordersError } = await supabase
           .from('orders')
-          .select('total, status, payment_status, created_at, email')
+          .select('total, shipping_total, status, payment_status, created_at, email')
           .eq('payment_status', 'paid')
           .not('status', 'in', '(cancelled,refunded)');
 
@@ -69,7 +69,12 @@ export default function AdminDashboard() {
         const paidOrders = ordersData || [];
         setPaidOrders(paidOrders);
 
-        const totalRevenue = paidOrders.reduce((sum, order) => sum + (order.total || 0), 0);
+        // Revenue = merchandise only. Delivery fees pass through to riders /
+        // couriers, so they must not inflate the store's revenue numbers.
+        const totalRevenue = paidOrders.reduce(
+          (sum, order) => sum + Math.max(0, (order.total || 0) - (order.shipping_total || 0)),
+          0
+        );
         const totalOrders = paidOrders.length;
         const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
 
@@ -190,7 +195,8 @@ export default function AdminDashboard() {
     paidOrders.forEach(order => {
       const date = new Date(order.created_at).toISOString().split('T')[0];
       if (chartMap[date] !== undefined) {
-        chartMap[date] += (order.total || 0);
+        // Keep the chart consistent with Total Revenue: delivery fees excluded.
+        chartMap[date] += Math.max(0, (order.total || 0) - (order.shipping_total || 0));
       }
     });
 
@@ -287,7 +293,7 @@ export default function AdminDashboard() {
                   <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} tickFormatter={(value) => `GH₵${value}`} />
                   <Tooltip
                     contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                    formatter={(value: number) => [`GH₵${value.toFixed(2)}`, 'Revenue']}
+                    formatter={(value) => [`GH₵${Number(value ?? 0).toFixed(2)}`, 'Revenue']}
                   />
                   <Area type="monotone" dataKey="revenue" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorRevenue)" />
                 </AreaChart>

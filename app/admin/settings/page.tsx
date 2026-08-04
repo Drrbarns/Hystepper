@@ -803,7 +803,7 @@ export default function SettingsPage() {
                                 <div className="border-b border-gray-100 pb-4 mb-6">
                                     <h2 className="text-lg font-semibold text-gray-900">Contact & Social Media</h2>
                                     <p className="text-sm text-gray-500 mt-1">
-                                        These fields power every social icon and contact link on the storefront — footer, floating WhatsApp button, Instagram feed section, checkout fallbacks, etc. Leave a field blank to hide that icon site-wide.
+                                        These fields power every social icon and contact link on the storefront — footer, Contact Us page, Privacy, Terms, floating WhatsApp button, Instagram feed, checkout fallbacks, etc. Updating Contact Email here updates it everywhere customers see it. Leave a social field blank to hide that icon site-wide.
                                     </p>
                                 </div>
 
@@ -1001,6 +1001,10 @@ export default function SettingsPage() {
                                             onChange={(e) => updateSetting('loyalty_points_per_item', parseInt(e.target.value))}
                                             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all"
                                         />
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            Full rewards controls (pause, expiry, point value) are under{' '}
+                                            <a href="/admin/promotions" className="text-emerald-700 underline">Promotions</a>.
+                                        </p>
                                     </div>
 
                                     <div>

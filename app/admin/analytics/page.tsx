@@ -56,7 +56,7 @@ export default function AnalyticsPage() {
       // Fetch Orders for Revenue & Count
       const { data: orders, error: orderError } = await supabase
         .from('orders')
-        .select('id, created_at, total')
+        .select('id, created_at, total, shipping_total')
         .gte('created_at', isoStart)
         .in('status', ['delivered', 'shipped', 'processing'])
         .order('created_at');
@@ -88,8 +88,10 @@ export default function AnalyticsPage() {
         validItems = validItems.filter(it => !it.status || it.status === 'active');
       }
 
-      // Process Metrics
-      const totalRevenue = orders?.reduce((sum, o) => sum + (o.total || 0), 0) || 0;
+      // Process Metrics — delivery fees are excluded: they pass through to
+      // riders/couriers and are not store revenue.
+      const orderNet = (o: any) => Math.max(0, (o.total || 0) - (o.shipping_total || 0));
+      const totalRevenue = orders?.reduce((sum, o) => sum + orderNet(o), 0) || 0;
       const totalOrders = orders?.length || 0;
       const aov = totalOrders > 0 ? totalRevenue / totalOrders : 0;
 
@@ -124,7 +126,7 @@ export default function AnalyticsPage() {
       orders?.forEach(o => {
         const dateKey = new Date(o.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
         if (salesMap[dateKey]) {
-          salesMap[dateKey].sales += o.total || 0;
+          salesMap[dateKey].sales += orderNet(o);
           salesMap[dateKey].orders += 1;
         }
       });

@@ -3,14 +3,16 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import { supabase, setRememberMe } from '@/lib/supabase';
 
 export default function LoginPage() {
   const router = useRouter();
   const [formData, setFormData] = useState({
     email: '',
     password: '',
-    rememberMe: false
+    // Checked by default so returning customers stay signed in unless they
+    // explicitly opt out (e.g. on a shared device).
+    rememberMe: true
   });
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<any>({});
@@ -21,6 +23,14 @@ export default function LoginPage() {
   const [otpInfo, setOtpInfo] = useState('');
 
   const authBase = () => (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/$/, '');
+
+  // Where to land after signing in. Supports ?redirect=/checkout style links
+  // (internal paths only) so e.g. checkout can send customers here and back.
+  const postLoginPath = () => {
+    if (typeof window === 'undefined') return '/account';
+    const target = new URLSearchParams(window.location.search).get('redirect') || '';
+    return target.startsWith('/') && !target.startsWith('//') ? target : '/account';
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,6 +55,9 @@ export default function LoginPage() {
     }
 
     try {
+      // Must be set BEFORE sign-in so the fresh session lands in the right
+      // store (localStorage = remembered, sessionStorage = this tab only).
+      setRememberMe(formData.rememberMe);
       const { data, error } = await supabase.auth.signInWithPassword({
         email: formData.email,
         password: formData.password,
@@ -55,7 +68,7 @@ export default function LoginPage() {
       }
 
       if (data.session) {
-        router.push('/account');
+        router.push(postLoginPath());
         router.refresh();
       }
     } catch (error: any) {
@@ -121,7 +134,7 @@ export default function LoginPage() {
       });
       if (error) throw error;
       if (data.session) {
-        router.push('/account');
+        router.push(postLoginPath());
         router.refresh();
         return;
       }

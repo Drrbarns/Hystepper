@@ -165,6 +165,7 @@ export default function ProductEditor({ productId }: { productId: string }) {
   const [status, setStatus] = useState('active');
   const [featured, setFeatured] = useState(false);
   const [onSale, setOnSale] = useState(false);
+  const [isNewArrival, setIsNewArrival] = useState(false);
   const [description, setDescription] = useState('');
 
   // Pricing & Inventory
@@ -249,6 +250,7 @@ export default function ProductEditor({ productId }: { productId: string }) {
         setStatus(product.status || 'active');
         setFeatured(product.featured || false);
         setOnSale(product.on_sale || false);
+        setIsNewArrival(product.is_new_arrival || false);
         setDescription(product.description || '');
 
         setPrice(product.price?.toString() || '');
@@ -510,6 +512,7 @@ export default function ProductEditor({ productId }: { productId: string }) {
         status,
         featured,
         on_sale: onSale,
+        is_new_arrival: isNewArrival,
         description,
         price: parseFloat(price) || 0,
         compare_at_price: comparePrice ? parseFloat(comparePrice) : null,
@@ -886,6 +889,21 @@ export default function ProductEditor({ productId }: { productId: string }) {
                     Show on Sale page
                     <span className="ml-2 text-xs font-normal text-gray-500">
                       (Appears on the public /sale page)
+                    </span>
+                  </span>
+                </label>
+
+                <label className="flex items-center space-x-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isNewArrival}
+                    onChange={(e) => setIsNewArrival(e.target.checked)}
+                    className="w-5 h-5 text-sky-600 border-gray-300 rounded focus:ring-sky-500 cursor-pointer"
+                  />
+                  <span className="text-gray-900 font-medium">
+                    Mark as New Arrival
+                    <span className="ml-2 text-xs font-normal text-gray-500">
+                      (Appears when shoppers sort by New Arrivals)
                     </span>
                   </span>
                 </label>
@@ -1784,7 +1802,6 @@ export default function ProductEditor({ productId }: { productId: string }) {
                             }
                             className="w-full h-full object-cover"
                             muted
-                            defaultMuted
                             playsInline
                             loop
                             preload="metadata"

@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { StoreContactEmail, StoreContactPhone } from '@/components/StoreContact';
 
 export default function TermsPage() {
   return (
@@ -249,7 +250,7 @@ export default function TermsPage() {
                   <i className="ri-mail-line text-emerald-700 text-xl mt-1"></i>
                   <div>
                     <p className="font-medium text-gray-900">Email</p>
-                    <a href="mailto:hystepper2@gmail.com" className="text-emerald-700 hover:underline">hystepper2@gmail.com</a>
+                    <StoreContactEmail className="text-emerald-700 hover:underline" />
                   </div>
                 </div>
 
@@ -257,7 +258,7 @@ export default function TermsPage() {
                   <i className="ri-phone-line text-emerald-700 text-xl mt-1"></i>
                   <div>
                     <p className="font-medium text-gray-900">Phone</p>
-                    <a href="tel:0276558163" className="text-emerald-700 hover:underline">0276558163</a>
+                    <StoreContactPhone className="text-emerald-700 hover:underline" />
                   </div>
                 </div>
 

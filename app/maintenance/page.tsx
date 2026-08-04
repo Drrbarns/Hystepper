@@ -1,14 +1,48 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { supabase } from '@/lib/supabase';
 
 function pad(n: number) {
   return String(n).padStart(2, '0');
 }
 
+function clean(v: unknown, fallback: string): string {
+  const s = String(v ?? '')
+    .trim()
+    .replace(/^['"]+|['"]+$/g, '')
+    .trim();
+  return s || fallback;
+}
+
 export default function MaintenancePage() {
   const [timeLeft, setTimeLeft] = useState<{ h: number; m: number; s: number } | null>(null);
   const [ended, setEnded] = useState(false);
+  const [contactEmail, setContactEmail] = useState('info@hystepper.com');
+  const [whatsappUrl, setWhatsappUrl] = useState('https://wa.me/233276558163');
+  const [phoneTel, setPhoneTel] = useState('tel:+233276558163');
+
+  useEffect(() => {
+    async function loadContact() {
+      try {
+        const { data } = await supabase
+          .from('store_settings')
+          .select('key, value')
+          .in('key', ['contact_email', 'contact_phone', 'whatsapp_number']);
+        if (!data) return;
+        const map = Object.fromEntries(data.map((r) => [r.key, r.value]));
+        const email = clean(map.contact_email, 'info@hystepper.com');
+        const phone = clean(map.contact_phone, '0276558163');
+        const wa = clean(map.whatsapp_number, phone).replace(/\D/g, '');
+        setContactEmail(email);
+        if (wa) setWhatsappUrl(`https://wa.me/${wa}`);
+        setPhoneTel(`tel:${phone.replace(/\s/g, '')}`);
+      } catch {
+        /* keep defaults */
+      }
+    }
+    void loadContact();
+  }, []);
 
   useEffect(() => {
     let endTime = 0;
@@ -118,14 +152,14 @@ export default function MaintenancePage() {
           <p className="text-gray-600 mb-6 text-sm sm:text-base">Our customer service team is still available to help you.</p>
           <div className="flex flex-wrap gap-3 sm:gap-4 justify-center">
             <a
-              href="mailto:hystepper2@gmail.com"
+              href={`mailto:${contactEmail}`}
               className="inline-flex items-center gap-2 bg-white text-gray-900 px-5 py-2.5 rounded-full font-medium hover:bg-gray-50 transition-colors border border-gray-200 text-sm"
             >
               <i className="ri-mail-line"></i>
               Email Us
             </a>
             <a
-              href="https://wa.me/233276558163"
+              href={whatsappUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 bg-emerald-700 text-white px-5 py-2.5 rounded-full font-medium hover:bg-emerald-800 transition-colors text-sm"
@@ -134,7 +168,7 @@ export default function MaintenancePage() {
               WhatsApp
             </a>
             <a
-              href="tel:+233276558163"
+              href={phoneTel}
               className="inline-flex items-center gap-2 bg-white text-gray-900 px-5 py-2.5 rounded-full font-medium hover:bg-gray-50 transition-colors border border-gray-200 text-sm"
             >
               <i className="ri-phone-line"></i>

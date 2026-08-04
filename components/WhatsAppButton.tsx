@@ -9,7 +9,9 @@ const STORAGE_KEY = 'whatsapp-button-pos-v1';
 const DRAG_THRESHOLD = 6;
 // Default offset from the bottom-right corner (matches the old layout).
 const DEFAULT_RIGHT = 24;
-const DEFAULT_BOTTOM = 24;
+// Sit above the mobile bottom nav (h-16 = 64px) + a little margin. On
+// desktop the nav is hidden so this still looks fine.
+const DEFAULT_BOTTOM = 88;
 
 type Pos = { x: number; y: number };
 

@@ -8,6 +8,16 @@ import OrderSummary from '@/components/OrderSummary';
 import { useCart } from '@/context/CartContext';
 import { useCMS } from '@/context/CMSContext';
 import { supabase } from '@/lib/supabase';
+import {
+  DEFAULT_PROMOTIONS,
+  applyDeliveryFeeAdjustments,
+  fetchStorePromotions,
+  isDeliveryDiscountEligible,
+  loyaltyDiscountAmount,
+  pointsToRedeemForDiscount,
+  storewideDiscountAmount,
+  type StorePromotions,
+} from '@/lib/promotions';
 
 export default function CheckoutPage() {
   const router = useRouter();
@@ -35,6 +45,26 @@ export default function CheckoutPage() {
   const [checkoutType, setCheckoutType] = useState<'guest' | 'account'>('guest');
   const [user, setUser] = useState<any>(null);
 
+  // "Create Account" during checkout: the customer sets a password, we sign
+  // them up with the shipping details, verify their phone via SMS OTP, and
+  // only then open the payment modal so the order is placed with a session
+  // (orders RLS only lets authenticated users attach a user_id).
+  const [accountData, setAccountData] = useState({ password: '', confirmPassword: '' });
+  const [showAccountPassword, setShowAccountPassword] = useState(false);
+  const [showAccountConfirm, setShowAccountConfirm] = useState(false);
+  const [accountError, setAccountError] = useState('');
+  const [signupPending, setSignupPending] = useState(false);
+  const [signupEmail, setSignupEmail] = useState('');
+  const [showOtpModal, setShowOtpModal] = useState(false);
+  const [otp, setOtp] = useState('');
+  const [otpBusy, setOtpBusy] = useState(false);
+  const [otpError, setOtpError] = useState('');
+  const [otpInfo, setOtpInfo] = useState('');
+  // Session user established mid-checkout (avoids stale `user` closures).
+  const verifiedUserRef = useRef<any>(null);
+
+  const authBase = () => (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/$/, '');
+
   const [shippingData, setShippingData] = useState({
     firstName: '',
     lastName: '',
@@ -47,6 +77,13 @@ export default function CheckoutPage() {
 
   const [regions, setRegions] = useState<any[]>([]);
   const [selectedRegionType, setSelectedRegionType] = useState<string>('');
+
+  // Saved address book (signed-in customers): selectable at checkout.
+  const [savedAddresses, setSavedAddresses] = useState<any[]>([]);
+  const [selectedAddressId, setSelectedAddressId] = useState<string>('');
+  // Skips the "clear region on region-type change" effect while a saved
+  // address is being applied, so its zone isn't immediately wiped.
+  const applyingAddressRef = useRef(false);
   const [accraZones, setAccraZones] = useState<any[]>([]);
   const [outsideZones, setOutsideZones] = useState<any[]>([]);
 
@@ -101,6 +138,7 @@ export default function CheckoutPage() {
     nextDayDelivery: false,
     deliveryUnavailable: false
   });
+  const [promotions, setPromotions] = useState<StorePromotions>({ ...DEFAULT_PROMOTIONS });
 
   const activeZone = regions.find(r => r.name === shippingData.region);
   const isAccra = selectedRegionType === 'greater_accra';
@@ -117,14 +155,10 @@ export default function CheckoutPage() {
     ? zoneMethods.find((m: any) => String(m.id ?? m.name) === selectedMethodId) || null
     : null;
 
-  // Zone-level fee adjustments (free delivery / % discount) set by the admin.
+  // Zone-level fee adjustments (free delivery / % discount) set by the admin,
+  // plus store-wide delivery promotions from Admin → Promotions.
   const zoneDiscountPercent = Math.min(100, Math.max(0, Number(activeZone?.discount_percent) || 0));
   const zoneFreeDelivery = !!activeZone?.free_delivery;
-  const applyZoneFeeAdjustments = (fee: number) => {
-    if (zoneFreeDelivery) return 0;
-    if (zoneDiscountPercent > 0) return Math.max(0, fee * (1 - zoneDiscountPercent / 100));
-    return fee;
-  };
 
   // Reset the picked method whenever the delivery area changes.
   useEffect(() => {
@@ -148,6 +182,14 @@ export default function CheckoutPage() {
         if (pointsData) {
           setLoyaltyPoints(pointsData.points || 0);
         }
+
+        const { data: addressData } = await supabase
+          .from('addresses')
+          .select('id, label, full_name, phone, address_line1, city, state, is_default')
+          .eq('user_id', session.user.id)
+          .order('is_default', { ascending: false })
+          .order('created_at', { ascending: false });
+        if (addressData) setSavedAddresses(addressData);
       }
 
       const { data: settingsData } = await supabase
@@ -160,6 +202,12 @@ export default function CheckoutPage() {
         const nextDay = settingsData.find(s => s.key === 'next_day_delivery_enabled')?.value === true || settingsData.find(s => s.key === 'next_day_delivery_enabled')?.value === 'true';
         const unavailable = settingsData.find(s => s.key === 'delivery_unavailable')?.value === true || settingsData.find(s => s.key === 'delivery_unavailable')?.value === 'true';
         setSettings({ sameDayDelivery: sameDay, nextDayDelivery: nextDay, deliveryUnavailable: unavailable });
+      }
+
+      try {
+        setPromotions(await fetchStorePromotions());
+      } catch (err) {
+        console.error('Failed to load promotions:', err);
       }
 
       const { data: zonesData } = await supabase
@@ -184,6 +232,10 @@ export default function CheckoutPage() {
   }, [isAccra, paymentOption]);
 
   useEffect(() => {
+    if (applyingAddressRef.current) {
+      applyingAddressRef.current = false;
+      return;
+    }
     if (selectedRegionType === 'other_regions') {
       setShippingData(prev => ({ ...prev, region: '', city: '' }));
     }
@@ -192,6 +244,79 @@ export default function CheckoutPage() {
   // Calculate Totals
   const subtotal = cartSubtotal;
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+
+  // Product / checkout promotions first — delivery fee discounts are exclusive of these.
+  const storewideDiscount = storewideDiscountAmount(subtotal, promotions);
+  const merchandiseAfterSale = Math.max(0, subtotal - storewideDiscount);
+  const pointsDiscount = loyaltyDiscountAmount(
+    loyaltyPoints,
+    redeemPoints && !couponApplied,
+    merchandiseAfterSale,
+    promotions
+  );
+  const pointsToDeduct = pointsDiscount > 0 ? pointsToRedeemForDiscount(pointsDiscount, promotions) : 0;
+  const totalDiscount = storewideDiscount + (couponApplied ? couponDiscount : pointsDiscount);
+
+  // Delivery fee discounts (zone free/%, global %, free-by-item-count) cannot
+  // stack with coupons, Sleek Points, or store-wide sale %. Sale-priced items
+  // in the cart alone do not block delivery discounts.
+  const deliveryDiscountEligible = isDeliveryDiscountEligible({
+    hasCoupon: !!couponApplied,
+    hasLoyaltyRedeem: pointsDiscount > 0,
+    hasStorewideSale: storewideDiscount > 0,
+  });
+
+  const freeByItemCount =
+    deliveryDiscountEligible &&
+    promotions.freeDeliveryMinItems > 0 &&
+    totalItems >= promotions.freeDeliveryMinItems;
+
+  const applyZoneFeeAdjustments = (fee: number) =>
+    applyDeliveryFeeAdjustments(fee, {
+      zoneFreeDelivery,
+      zoneDiscountPercent,
+      globalDeliveryDiscountPercent: promotions.globalDeliveryDiscountPercent,
+      freeDeliveryMinItems: promotions.freeDeliveryMinItems,
+      totalItems,
+      eligible: deliveryDiscountEligible,
+    });
+
+  /** Preview fee for a zone in the location picker (before it's selected). */
+  const previewZoneFee = (zone: any) => {
+    const methods = Array.isArray(zone?.methods)
+      ? zone.methods.filter((m: any) => m && m.name && m.active !== false)
+      : [];
+    const rawCandidates = methods.length > 0
+      ? methods.map((m: any) => Number(m.fee) || 0)
+      : [Number(zone?.base_fee) || 0];
+    const raw = Math.min(...rawCandidates);
+    const final = applyDeliveryFeeAdjustments(raw, {
+      zoneFreeDelivery: !!zone?.free_delivery,
+      zoneDiscountPercent: Math.min(100, Math.max(0, Number(zone?.discount_percent) || 0)),
+      globalDeliveryDiscountPercent: promotions.globalDeliveryDiscountPercent,
+      freeDeliveryMinItems: promotions.freeDeliveryMinItems,
+      totalItems,
+      eligible: deliveryDiscountEligible,
+    });
+    const zonePct = Math.min(100, Math.max(0, Number(zone?.discount_percent) || 0));
+    return {
+      raw,
+      final,
+      discounted: final < raw,
+      isFree: final === 0,
+      badge: !deliveryDiscountEligible
+        ? null
+        : zone?.free_delivery || freeByItemCount
+          ? 'FREE'
+          : zonePct > 0
+            ? `${zonePct}% off`
+            : promotions.globalDeliveryDiscountPercent > 0 && final < raw
+              ? `${promotions.globalDeliveryDiscountPercent}% off`
+              : null,
+      isFrom: methods.length > 1,
+    };
+  };
+
   const baseFee = activeZone?.base_fee || 0;
   const perItemFee = activeZone?.per_item_fee || 0;
   // The "3+ items → manual quote" rule only applies to the legacy formula;
@@ -206,10 +331,21 @@ export default function CheckoutPage() {
         : totalItems === 2
           ? baseFee + perItemFee
           : 0;
-  const shippingCost = applyZoneFeeAdjustments(zoneFee);
+  // Free-shipping coupons still waive delivery; other coupons block zone/promo delivery discounts.
+  const shippingCost = applyZoneFeeAdjustments(
+    couponApplied?.type === 'free_shipping' ? 0 : zoneFee
+  );
 
-  const pointsDiscount = (redeemPoints && loyaltyPoints >= 15 && !couponApplied) ? Math.min(loyaltyPoints, subtotal) : 0;
-  const totalDiscount = couponApplied ? couponDiscount : pointsDiscount;
+  const wouldHaveDeliveryPromo =
+    zoneFreeDelivery ||
+    (promotions.freeDeliveryMinItems > 0 && totalItems >= promotions.freeDeliveryMinItems) ||
+    zoneDiscountPercent > 0 ||
+    promotions.globalDeliveryDiscountPercent > 0;
+  // Free-shipping coupons already waive the fee — don't show the "paused" notice for those.
+  const deliveryPromoBlocked =
+    !deliveryDiscountEligible &&
+    wouldHaveDeliveryPromo &&
+    couponApplied?.type !== 'free_shipping';
 
   const tax = 0;
   const totalBeforeSplit = Math.max(0, subtotal + shippingCost + tax - totalDiscount);
@@ -282,7 +418,7 @@ export default function CheckoutPage() {
         return;
       }
 
-      if (coupon.minimum_purchase && subtotal < coupon.minimum_purchase) {
+      if (coupon.minimum_purchase && merchandiseAfterSale < coupon.minimum_purchase) {
         setCouponError(`Minimum purchase of GH₵ ${coupon.minimum_purchase} required`);
         setCouponLoading(false);
         return;
@@ -294,12 +430,18 @@ export default function CheckoutPage() {
 
       let discount = 0;
       if (coupon.type === 'percentage') {
-        discount = (subtotal * coupon.value) / 100;
+        discount = (merchandiseAfterSale * coupon.value) / 100;
         if (coupon.maximum_discount) {
           discount = Math.min(discount, coupon.maximum_discount);
         }
       } else if (coupon.type === 'fixed_amount') {
-        discount = Math.min(coupon.value, subtotal);
+        discount = Math.min(coupon.value, merchandiseAfterSale);
+      } else if (coupon.type === 'free_shipping') {
+        discount = 0;
+        // Free shipping coupons: zero the fee via a flag — handled by setting
+        // coupon type metadata; we still mark the coupon applied.
+      } else {
+        discount = Math.min(coupon.value, merchandiseAfterSale);
       }
 
       setCouponDiscount(discount);
@@ -318,12 +460,173 @@ export default function CheckoutPage() {
     setCouponError('');
   };
 
+  const startAccountSignup = async () => {
+    setAccountError('');
+    setIsLoading(true);
+    try {
+      // Re-run signup if the customer changed their email since the last try.
+      if (!signupPending || signupEmail !== shippingData.email) {
+        const { data, error } = await supabase.auth.signUp({
+          email: shippingData.email,
+          password: accountData.password,
+          options: {
+            emailRedirectTo: `${window.location.origin}/account`,
+            data: {
+              first_name: shippingData.firstName,
+              last_name: shippingData.lastName,
+              phone: shippingData.phone,
+            },
+          },
+        });
+        if (error) throw error;
+
+        if (data.session && data.user?.email_confirmed_at) {
+          // No verification needed — straight to payment with a session.
+          verifiedUserRef.current = data.session.user;
+          setUser(data.session.user);
+          setShowPaymentModal(true);
+          return;
+        }
+        setSignupPending(true);
+        setSignupEmail(shippingData.email);
+      }
+
+      setOtp('');
+      setOtpError('');
+      setOtpInfo(
+        `We sent a 6-digit code to ${shippingData.phone}. Enter it below to activate your account, then continue to payment.`
+      );
+      setShowOtpModal(true);
+    } catch (err: any) {
+      const msg = String(err?.message || '');
+      const code = String(err?.code || err?.error || '');
+      if (code === 'user_already_exists' || /already (registered|exists|been registered)/i.test(msg)) {
+        setAccountError('An account with this email already exists. Sign in below, or switch to Guest Checkout.');
+      } else {
+        setAccountError(msg || 'Could not create your account right now. You can still continue as a guest.');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const verifyCheckoutOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setOtpError('');
+    const cleaned = otp.replace(/\D/g, '');
+    if (!/^\d{6}$/.test(cleaned)) {
+      setOtpError('Enter the 6-digit code from your SMS.');
+      return;
+    }
+    setOtpBusy(true);
+    try {
+      const { data, error } = await supabase.auth.verifyOtp({
+        email: shippingData.email,
+        token: cleaned,
+        type: 'signup',
+      });
+      if (error) throw error;
+      if (!data.session) {
+        throw new Error('Verification succeeded but no session was created. Please sign in and try again.');
+      }
+
+      verifiedUserRef.current = data.session.user;
+      setUser(data.session.user);
+      setShowOtpModal(false);
+      toast.success('Account created and verified! Choose how to pay.');
+
+      fetch('/api/notifications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'welcome',
+          payload: { email: shippingData.email, firstName: shippingData.firstName, phone: shippingData.phone },
+        }),
+      }).catch(err => console.error('Welcome notification error:', err));
+
+      setShowPaymentModal(true);
+    } catch (err: any) {
+      setOtpError(err?.message || 'Invalid or expired code. Try again or resend.');
+    } finally {
+      setOtpBusy(false);
+    }
+  };
+
+  const resendCheckoutOtp = async () => {
+    setOtpError('');
+    try {
+      const res = await fetch(`${authBase()}/auth/v1/resend`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
+        },
+        body: JSON.stringify({ email: shippingData.email, type: 'sms' }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload.message || payload.error_description || 'Could not resend code');
+      }
+      setOtpInfo('A new SMS code was sent. Enter it below to continue.');
+    } catch (err: any) {
+      setOtpError(err?.message || 'Could not resend right now. Please try again in a moment.');
+    }
+  };
+
+  const applySavedAddress = (a: any) => {
+    const parts = String(a.full_name || '').trim().split(/\s+/);
+    const firstName = parts.shift() || '';
+    const lastName = parts.join(' ');
+    const zone = regions.find((z: any) => z.name === a.state);
+
+    applyingAddressRef.current = true;
+    setSelectedRegionType(zone ? (zone.is_accra ? 'greater_accra' : 'other_regions') : '');
+    setShippingData(prev => ({
+      ...prev,
+      firstName,
+      lastName,
+      phone: a.phone || '',
+      address: a.address_line1 || '',
+      city: a.city || '',
+      region: zone ? zone.name : '',
+    }));
+    setAreaSearch('');
+    setShowAreaDropdown(false);
+    setSelectedAddressId(a.id);
+    setErrors((prev: any) => ({
+      ...prev, firstName: '', lastName: '', phone: '', address: '', city: '', region: '',
+    }));
+    if (!zone) {
+      toast.error('The delivery area saved on this address is no longer offered — please pick your area below.');
+    }
+  };
+
   const handleProceedToPayment = () => {
     const shippingOk = validateShipping();
     const policyMissing = !acceptedPolicy;
     if (policyMissing) setPolicyError(true);
 
-    if (!shippingOk || policyMissing) {
+    // Creating an account needs a real email + a valid password before we
+    // can sign the customer up.
+    const accountErrors: any = {};
+    if (checkoutType === 'account' && !user && !verifiedUserRef.current) {
+      if (!shippingData.email || !/\S+@\S+\.\S+/.test(shippingData.email)) {
+        accountErrors.email = 'Email is required to create an account';
+      }
+      if (!accountData.password) {
+        accountErrors.accountPassword = 'Password is required';
+      } else if (accountData.password.length < 6) {
+        accountErrors.accountPassword = 'Password must be at least 6 characters';
+      }
+      if (accountData.password !== accountData.confirmPassword) {
+        accountErrors.accountConfirm = 'Passwords do not match';
+      }
+      if (Object.keys(accountErrors).length > 0) {
+        setErrors((prev: any) => ({ ...prev, ...accountErrors }));
+      }
+    }
+
+    if (!shippingOk || policyMissing || Object.keys(accountErrors).length > 0) {
       // Surface a top-of-form summary so the customer knows what to fix
       // without having to spot the red borders themselves.
       setShowValidationBanner(true);
@@ -350,12 +653,24 @@ export default function CheckoutPage() {
     }
 
     setShowValidationBanner(false);
+
+    // New account requested: sign up + verify phone first; the payment modal
+    // opens automatically once the OTP is confirmed.
+    if (checkoutType === 'account' && !user && !verifiedUserRef.current) {
+      void startAccountSignup();
+      return;
+    }
+
     setShowPaymentModal(true);
   };
 
   const handlePlaceOrder = async (gateway: 'paystack' | 'moolre') => {
     setIsLoading(true);
     setShowPaymentModal(false);
+
+    // A session created mid-checkout (Create Account flow) may not have
+    // propagated into the `user` state closure yet — prefer the ref.
+    const authedUser = user || verifiedUserRef.current;
 
     try {
       // Last-chance stock check: between the customer opening the payment
@@ -424,7 +739,7 @@ export default function CheckoutPage() {
         .from('orders')
         .insert([{
           order_number: orderNumber,
-          user_id: user?.id || null,
+          user_id: authedUser?.id || null,
           email: orderEmail,
           phone: shippingData.phone,
           status: 'pending',
@@ -439,19 +754,27 @@ export default function CheckoutPage() {
           payment_method: gateway,
           payment_option: paymentOption,
           delivery_notes: deliveryNotes,
-          points_redeemed: pointsDiscount > 0 ? pointsDiscount : 0,
+          points_redeemed: pointsToDeduct > 0 ? pointsToDeduct : 0,
           points_discount: pointsDiscount,
           shipping_address: shippingData,
           billing_address: shippingData,
           metadata: {
-            guest_checkout: !user,
+            guest_checkout: !authedUser,
             first_name: shippingData.firstName,
             last_name: shippingData.lastName,
             region: shippingData.region,
             delivery_zone_id: activeZone?.id || null,
             delivery_method: selectedMethod?.name || null,
-            delivery_fee_waived: zoneFreeDelivery || undefined,
-            delivery_fee_discount_percent: zoneDiscountPercent > 0 ? zoneDiscountPercent : undefined,
+            delivery_fee_waived: deliveryDiscountEligible && (zoneFreeDelivery || freeByItemCount) ? true : undefined,
+            delivery_fee_discount_percent: deliveryDiscountEligible && zoneDiscountPercent > 0 ? zoneDiscountPercent : undefined,
+            global_delivery_discount_percent: deliveryDiscountEligible && promotions.globalDeliveryDiscountPercent > 0
+              ? promotions.globalDeliveryDiscountPercent
+              : undefined,
+            free_delivery_min_items: deliveryDiscountEligible && freeByItemCount ? promotions.freeDeliveryMinItems : undefined,
+            delivery_discount_blocked: deliveryPromoBlocked || undefined,
+            storewide_sale_percent: storewideDiscount > 0 ? promotions.storewideSalePercent : undefined,
+            storewide_sale_discount: storewideDiscount > 0 ? storewideDiscount : undefined,
+            storewide_sale_name: storewideDiscount > 0 ? (promotions.storewideSaleName || null) : undefined,
             payable_now: payableNow,
             delivery_fee_due: deliveryFeeToPayLater,
             coupon_code: couponApplied?.code || null,
@@ -508,18 +831,18 @@ export default function CheckoutPage() {
       }
 
       // Deduct Points if used
-      if (pointsDiscount > 0 && user) {
+      if (pointsDiscount > 0 && pointsToDeduct > 0 && user) {
         await supabase
           .from('loyalty_points')
-          .update({ points: loyaltyPoints - pointsDiscount, updated_at: new Date().toISOString() })
+          .update({ points: Math.max(0, loyaltyPoints - pointsToDeduct), updated_at: new Date().toISOString() })
           .eq('user_id', user.id);
 
         await supabase.from('loyalty_transactions').insert({
           user_id: user.id,
           order_id: order.id,
-          amount: -pointsDiscount,
+          amount: -pointsToDeduct,
           type: 'redemption',
-          description: `Redeemed ${pointsDiscount} points (GH₵ ${pointsDiscount.toFixed(2)} off) on order ${orderNumber}`
+          description: `Redeemed ${pointsToDeduct} points (GH₵ ${pointsDiscount.toFixed(2)} off) on order ${orderNumber}`
         });
       }
 
@@ -532,11 +855,16 @@ export default function CheckoutPage() {
       if (payableNow <= 0) {
         // Fully covered by points / coupon — nothing to charge online. Mark the
         // order as paid and decrement stock right away (no payment webhook will
-        // fire for this path).
-        await supabase
-          .from('orders')
-          .update({ payment_status: 'paid', status: 'processing' })
-          .eq('id', order.id);
+        // fire for this path). SECURITY DEFINER RPC so guest + authed both work
+        // under RLS.
+        const { error: finalizeError } = await supabase.rpc('finalize_zero_payment_order', {
+          p_order_id: order.id,
+        });
+        if (finalizeError) {
+          console.error('finalize_zero_payment_order failed for', orderNumber, finalizeError);
+          toast.error('Could not finalize zero-balance order. Please contact support.');
+          return;
+        }
 
         const { error: stockError } = await supabase.rpc('decrement_order_stock', {
           order_ref: order.id,
@@ -674,6 +1002,89 @@ export default function CheckoutPage() {
               </p>
             </button>
           </div>
+
+          {checkoutType === 'account' && !user && (
+            <div className="mt-4 pt-4 border-t border-gray-100 space-y-4">
+              <div className="flex items-start justify-between flex-wrap gap-2">
+                <p className="text-sm text-gray-600">
+                  Set a password below — we&apos;ll create your account with your shipping details and text a
+                  6-digit code to your phone to verify it before payment.
+                </p>
+              </div>
+
+              <div className="rounded-lg bg-gold-50 border border-gold-200 px-4 py-3 flex items-center justify-between flex-wrap gap-2">
+                <p className="text-sm text-gray-700">Already have an account?</p>
+                <Link
+                  href="/auth/login?redirect=/checkout"
+                  className="text-sm font-bold text-gold-600 hover:text-gold-700 whitespace-nowrap"
+                >
+                  Sign in instead <i className="ri-arrow-right-line align-middle"></i>
+                </Link>
+              </div>
+
+              {accountError && (
+                <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3">
+                  <p className="text-sm text-red-700">{accountError}</p>
+                  <Link href="/auth/login?redirect=/checkout" className="text-sm font-semibold text-red-700 underline">
+                    Go to sign in
+                  </Link>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div data-shipping-error={errors.accountPassword ? 'true' : undefined} className="scroll-mt-24">
+                  <label className="block text-sm font-semibold text-gray-900 mb-1.5">Password *</label>
+                  <div className="relative">
+                    <input
+                      type={showAccountPassword ? 'text' : 'password'}
+                      value={accountData.password}
+                      onChange={(e) => { setAccountData({ ...accountData, password: e.target.value }); setErrors((prev: any) => ({ ...prev, accountPassword: '' })); }}
+                      className={`w-full px-4 py-3 pr-12 border-2 rounded-lg focus:ring-2 focus:ring-gold-300 focus:border-gold-400 ${errors.accountPassword ? 'border-red-500' : 'border-gray-300'}`}
+                      placeholder="At least 6 characters"
+                      autoComplete="new-password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowAccountPassword(!showAccountPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
+                      aria-label={showAccountPassword ? 'Hide password' : 'Show password'}
+                    >
+                      <i className={`${showAccountPassword ? 'ri-eye-off-line' : 'ri-eye-line'} text-xl`}></i>
+                    </button>
+                  </div>
+                  {errors.accountPassword && <p className="text-sm text-red-600 mt-1 flex items-center gap-1"><i className="ri-error-warning-line"></i>{errors.accountPassword}</p>}
+                </div>
+
+                <div data-shipping-error={errors.accountConfirm ? 'true' : undefined} className="scroll-mt-24">
+                  <label className="block text-sm font-semibold text-gray-900 mb-1.5">Confirm Password *</label>
+                  <div className="relative">
+                    <input
+                      type={showAccountConfirm ? 'text' : 'password'}
+                      value={accountData.confirmPassword}
+                      onChange={(e) => { setAccountData({ ...accountData, confirmPassword: e.target.value }); setErrors((prev: any) => ({ ...prev, accountConfirm: '' })); }}
+                      className={`w-full px-4 py-3 pr-12 border-2 rounded-lg focus:ring-2 focus:ring-gold-300 focus:border-gold-400 ${errors.accountConfirm ? 'border-red-500' : 'border-gray-300'}`}
+                      placeholder="Re-enter your password"
+                      autoComplete="new-password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowAccountConfirm(!showAccountConfirm)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
+                      aria-label={showAccountConfirm ? 'Hide password' : 'Show password'}
+                    >
+                      <i className={`${showAccountConfirm ? 'ri-eye-off-line' : 'ri-eye-line'} text-xl`}></i>
+                    </button>
+                  </div>
+                  {errors.accountConfirm && <p className="text-sm text-red-600 mt-1 flex items-center gap-1"><i className="ri-error-warning-line"></i>{errors.accountConfirm}</p>}
+                </div>
+              </div>
+
+              <p className="text-xs text-gray-500 flex items-center gap-1">
+                <i className="ri-information-line"></i>
+                Email becomes required for account creation — fill it in under Shipping Information.
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="grid lg:grid-cols-3 gap-8">
@@ -694,6 +1105,43 @@ export default function CheckoutPage() {
             {/* Shipping Information */}
             <div className="bg-white rounded-xl shadow-sm p-6">
               <h2 className="text-lg font-bold text-gray-900 mb-5">Shipping Information</h2>
+
+              {savedAddresses.length > 0 && (
+                <div className="mb-6">
+                  <p className="text-sm font-semibold text-gray-700 mb-2">
+                    <i className="ri-map-pin-user-line mr-1 text-gold-600"></i>
+                    Use a saved address
+                  </p>
+                  <div className="grid sm:grid-cols-2 gap-2">
+                    {savedAddresses.map((a: any) => (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => applySavedAddress(a)}
+                        className={`text-left p-3 rounded-lg border-2 transition-all cursor-pointer ${selectedAddressId === a.id
+                          ? 'border-gold-500 bg-gold-50'
+                          : 'border-gray-200 hover:border-gray-300'
+                          }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-semibold text-gray-900 text-sm truncate">
+                            {a.label || a.full_name}
+                          </span>
+                          {a.is_default && (
+                            <span className="text-[10px] font-bold uppercase bg-gold-500 text-white px-1.5 py-0.5 rounded-full flex-shrink-0">Default</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-gray-500 truncate mt-0.5">
+                          {a.address_line1}, {a.city}{a.state ? ` — ${a.state}` : ''}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-400 mt-2">
+                    Manage addresses in <Link href="/account?tab=addresses" className="underline hover:text-gray-600">your account</Link>.
+                  </p>
+                </div>
+              )}
 
               <div className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -722,7 +1170,12 @@ export default function CheckoutPage() {
                 </div>
 
                 <div data-shipping-error={errors.email ? 'true' : undefined} className="scroll-mt-24">
-                  <label className="block text-sm font-semibold text-gray-900 mb-1.5">Email Address <span className="text-gray-400 font-normal">(optional)</span></label>
+                  <label className="block text-sm font-semibold text-gray-900 mb-1.5">
+                    Email Address{' '}
+                    {checkoutType === 'account' && !user
+                      ? <span className="text-red-500 font-normal">* (required for your account)</span>
+                      : <span className="text-gray-400 font-normal">(optional)</span>}
+                  </label>
                   <input
                     type="email"
                     value={shippingData.email}
@@ -775,7 +1228,15 @@ export default function CheckoutPage() {
                         <i className="ri-search-line text-gray-400 ml-3"></i>
                         <input
                           type="text"
-                          value={shippingData.region ? `${shippingData.region} — GH₵${accraZones.find(z => z.name === shippingData.region)?.base_fee?.toFixed(0) || ''}` : areaSearch}
+                          value={(() => {
+                            if (!shippingData.region) return areaSearch;
+                            const z = accraZones.find(zone => zone.name === shippingData.region);
+                            if (!z) return shippingData.region;
+                            const p = previewZoneFee(z);
+                            if (p.isFree) return `${z.name} — FREE`;
+                            if (p.discounted) return `${z.name} — GH₵${p.final.toFixed(0)} (was GH₵${p.raw.toFixed(0)})`;
+                            return `${z.name} — GH₵${p.final.toFixed(0)}`;
+                          })()}
                           onChange={(e) => {
                             setAreaSearch(e.target.value);
                             setShippingData({ ...shippingData, region: '' });
@@ -815,24 +1276,39 @@ export default function CheckoutPage() {
                             No areas match &ldquo;{areaSearch}&rdquo;
                           </div>
                         ) : (
-                          filteredAccraZones.map(z => (
-                            <button
-                              key={z.id}
-                              type="button"
-                              onClick={() => {
-                                setShippingData({ ...shippingData, region: z.name });
-                                setAreaSearch('');
-                                setShowAreaDropdown(false);
-                                setErrors((prev: any) => ({ ...prev, region: '' }));
-                              }}
-                              className="w-full text-left px-4 py-2.5 hover:bg-gold-50 transition-colors flex items-center justify-between cursor-pointer"
-                            >
-                              <span className="text-gray-900">{z.name}</span>
-                              <span className="text-sm font-semibold text-gold-700">
-                                {z.free_delivery ? 'FREE' : `GH₵${z.base_fee.toFixed(0)}`}
-                              </span>
-                            </button>
-                          ))
+                          filteredAccraZones.map(z => {
+                            const p = previewZoneFee(z);
+                            return (
+                              <button
+                                key={z.id}
+                                type="button"
+                                onClick={() => {
+                                  setShippingData({ ...shippingData, region: z.name });
+                                  setAreaSearch('');
+                                  setShowAreaDropdown(false);
+                                  setErrors((prev: any) => ({ ...prev, region: '' }));
+                                }}
+                                className="w-full text-left px-4 py-2.5 hover:bg-gold-50 transition-colors flex items-center justify-between gap-3 cursor-pointer"
+                              >
+                                <span className="text-gray-900 min-w-0 truncate">{z.name}</span>
+                                <span className="flex items-center gap-2 shrink-0">
+                                  {p.badge && (
+                                    <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
+                                      {p.badge}
+                                    </span>
+                                  )}
+                                  {p.discounted && !p.isFree && (
+                                    <span className="text-xs text-gray-400 line-through">
+                                      GH₵{p.raw.toFixed(0)}
+                                    </span>
+                                  )}
+                                  <span className={`text-sm font-semibold ${p.isFree || p.discounted ? 'text-emerald-700' : 'text-gold-700'}`}>
+                                    {p.isFree ? 'FREE' : `${p.isFrom ? 'from ' : ''}GH₵${p.final.toFixed(0)}`}
+                                  </span>
+                                </span>
+                              </button>
+                            );
+                          })
                         )}
                       </div>
                     )}
@@ -843,17 +1319,47 @@ export default function CheckoutPage() {
                 {selectedRegionType === 'other_regions' && (
                   <div data-shipping-error={errors.region && selectedRegionType === 'other_regions' ? 'true' : undefined} className="scroll-mt-24">
                     <label className="block text-sm font-semibold text-gray-900 mb-1.5">City *</label>
-                    <select
-                      value={shippingData.region}
-                      onChange={(e) => { setShippingData({ ...shippingData, region: e.target.value }); setErrors((prev: any) => ({ ...prev, region: '' })); }}
-                      className={`w-full px-4 py-3 border-2 rounded-lg focus:ring-2 focus:ring-gold-300 focus:border-gold-400 ${errors.region ? 'border-red-500' : 'border-gray-300'} bg-white`}
-                    >
-                      <option value="">Select your city</option>
-                      {outsideZones.map(z => (
-                        <option key={z.id} value={z.name}>{z.name}</option>
-                      ))}
-                    </select>
-                    {errors.region && <p className="text-sm text-red-600 mt-1">{errors.region}</p>}
+                    <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                      {outsideZones.map(z => {
+                        const p = previewZoneFee(z);
+                        const selected = shippingData.region === z.name;
+                        return (
+                          <button
+                            key={z.id}
+                            type="button"
+                            onClick={() => {
+                              setShippingData({ ...shippingData, region: z.name });
+                              setErrors((prev: any) => ({ ...prev, region: '' }));
+                            }}
+                            className={`w-full text-left px-4 py-3 border-2 rounded-lg transition-colors flex items-center justify-between gap-3 cursor-pointer ${
+                              selected
+                                ? 'border-gold-500 bg-gold-50'
+                                : errors.region
+                                  ? 'border-red-300 hover:border-red-400'
+                                  : 'border-gray-200 hover:border-gray-300'
+                            }`}
+                          >
+                            <span className="font-medium text-gray-900 min-w-0 truncate">{z.name}</span>
+                            <span className="flex items-center gap-2 shrink-0">
+                              {p.badge && (
+                                <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
+                                  {p.badge}
+                                </span>
+                              )}
+                              {p.discounted && !p.isFree && (
+                                <span className="text-xs text-gray-400 line-through">
+                                  GH₵{p.raw.toFixed(0)}
+                                </span>
+                              )}
+                              <span className={`text-sm font-semibold ${p.isFree || p.discounted ? 'text-emerald-700' : 'text-gray-900'}`}>
+                                {p.isFree ? 'FREE' : `${p.isFrom ? 'from ' : ''}GH₵${p.final.toFixed(0)}`}
+                              </span>
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {errors.region && <p className="text-sm text-red-600 mt-2">{errors.region}</p>}
                   </div>
                 )}
 
@@ -873,18 +1379,6 @@ export default function CheckoutPage() {
                   </div>
                 ) : (
                   <>
-                    {(settings.sameDayDelivery || settings.nextDayDelivery) && (
-                      <div className={`mb-3 p-3 ${settings.sameDayDelivery ? 'bg-emerald-50 border-emerald-200' : 'bg-blue-50 border-blue-200'} border rounded-lg flex items-start gap-2`}>
-                        <i className={`ri-information-line ${settings.sameDayDelivery ? 'text-emerald-600' : 'text-blue-600'} mt-0.5`}></i>
-                        <p className={`text-sm ${settings.sameDayDelivery ? 'text-emerald-800' : 'text-blue-800'}`}>
-                          {settings.sameDayDelivery
-                            ? <><strong>Same-day delivery is active.</strong> Orders placed now will be delivered today.</>
-                            : <><strong>Next-day delivery is active.</strong> All orders placed today will be delivered tomorrow.</>
-                          }
-                        </p>
-                      </div>
-                    )}
-
                     {outsideAccraTooManyItems ? (
                       <div className="p-5 bg-amber-50 border-2 border-amber-300 rounded-xl text-center">
                         <i className="ri-customer-service-2-line text-3xl text-amber-500 mb-2 block"></i>
@@ -951,14 +1445,38 @@ export default function CheckoutPage() {
                           })}
                         </div>
                         {errors.deliveryMethod && <p className="text-sm text-red-600 mt-2">{errors.deliveryMethod}</p>}
-                        {zoneFreeDelivery && (
+                        {deliveryPromoBlocked && (
+                          <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-2 flex items-start gap-2">
+                            <i className="ri-information-line mt-0.5"></i>
+                            <span>
+                              Delivery discounts can&apos;t be combined with coupons, Sleek Points, or other promotions — full delivery fee applies.
+                              Sale items in your cart are fine and do not block delivery discounts.
+                            </span>
+                          </p>
+                        )}
+                        {deliveryDiscountEligible && freeByItemCount && (
+                          <p className="text-sm text-emerald-700 font-medium mt-2 flex items-center gap-1">
+                            <i className="ri-gift-line"></i> Free delivery — you have {totalItems}+ items in your cart!
+                          </p>
+                        )}
+                        {deliveryDiscountEligible && !freeByItemCount && zoneFreeDelivery && (
                           <p className="text-sm text-emerald-700 font-medium mt-2 flex items-center gap-1">
                             <i className="ri-gift-line"></i> Free delivery to {activeZone?.name} right now!
                           </p>
                         )}
-                        {!zoneFreeDelivery && zoneDiscountPercent > 0 && (
+                        {deliveryDiscountEligible && !freeByItemCount && !zoneFreeDelivery && zoneDiscountPercent > 0 && (
                           <p className="text-sm text-emerald-700 font-medium mt-2 flex items-center gap-1">
                             <i className="ri-percent-line"></i> {zoneDiscountPercent}% off delivery to {activeZone?.name} applied
+                          </p>
+                        )}
+                        {deliveryDiscountEligible && !freeByItemCount && !zoneFreeDelivery && promotions.globalDeliveryDiscountPercent > 0 && (
+                          <p className="text-sm text-emerald-700 font-medium mt-2 flex items-center gap-1">
+                            <i className="ri-truck-line"></i> {promotions.globalDeliveryDiscountPercent}% off delivery store-wide
+                          </p>
+                        )}
+                        {deliveryDiscountEligible && !freeByItemCount && promotions.freeDeliveryMinItems > 0 && totalItems < promotions.freeDeliveryMinItems && (
+                          <p className="text-sm text-gray-600 mt-2 flex items-center gap-1">
+                            <i className="ri-information-line"></i> Add {promotions.freeDeliveryMinItems - totalItems} more item{promotions.freeDeliveryMinItems - totalItems === 1 ? '' : 's'} for free delivery
                           </p>
                         )}
                       </div>
@@ -972,23 +1490,32 @@ export default function CheckoutPage() {
                               </p>
                               <p className="text-sm text-gray-600">
                                 {settings.sameDayDelivery
-                                  ? 'Delivered today'
+                                  ? 'All orders placed today will be delivered today.'
                                   : settings.nextDayDelivery
-                                    ? 'Delivered tomorrow'
+                                    ? 'All orders placed today will be delivered tomorrow.'
                                     : `Within ${isAccra ? '1-2' : '3-5'} business days`
                                 }
                               </p>
                             </div>
                             <div className="text-right">
-                              {(zoneFreeDelivery || zoneDiscountPercent > 0) && zoneFee > shippingCost && (
+                              {deliveryDiscountEligible && (zoneFreeDelivery || freeByItemCount || zoneDiscountPercent > 0 || promotions.globalDeliveryDiscountPercent > 0) && zoneFee > shippingCost && (
                                 <p className="text-xs text-gray-400 line-through">GH₵ {zoneFee.toFixed(2)}</p>
                               )}
                               <p className="font-bold text-gray-900">
-                                {shippingCost === 0 && zoneFreeDelivery ? 'FREE' : `GH₵ ${shippingCost.toFixed(2)}`}
+                                {shippingCost === 0 && deliveryDiscountEligible && (zoneFreeDelivery || freeByItemCount) ? 'FREE' : `GH₵ ${shippingCost.toFixed(2)}`}
                               </p>
                             </div>
                           </div>
                         </div>
+
+                        {deliveryPromoBlocked && (
+                          <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3 flex items-start gap-2">
+                            <i className="ri-information-line mt-0.5"></i>
+                            <span>
+                              Delivery discounts can&apos;t be combined with coupons, Sleek Points, or other promotions — full delivery fee applies.
+                            </span>
+                          </p>
+                        )}
 
                         {!isAccra && activeZone?.transport_service && (
                           <div className="mt-3 p-3 bg-gray-50 border border-gray-200 rounded-lg flex items-start gap-2">
@@ -1062,9 +1589,14 @@ export default function CheckoutPage() {
                       {couponApplied.code}
                     </p>
                     <p className="text-sm text-gold-600">
-                      {couponApplied.type === 'percentage' ? `${couponApplied.value}% off` : `GH₵ ${couponApplied.value} off`}
-                      {' '}&bull; Saving GH₵ {couponDiscount.toFixed(2)}
+                      {couponApplied.type === 'percentage' ? `${couponApplied.value}% off` : couponApplied.type === 'free_shipping' ? 'Free shipping' : `GH₵ ${couponApplied.value} off`}
+                      {couponApplied.type !== 'free_shipping' && <>{' '}&bull; Saving GH₵ {couponDiscount.toFixed(2)}</>}
                     </p>
+                    {couponApplied.type !== 'free_shipping' && wouldHaveDeliveryPromo && (
+                      <p className="text-xs text-amber-700 mt-1">
+                        Delivery discounts are paused while a coupon is applied.
+                      </p>
+                    )}
                   </div>
                   <button onClick={removeCoupon} className="text-red-500 hover:text-red-700 cursor-pointer p-1">
                     <i className="ri-close-circle-line text-xl"></i>
@@ -1098,7 +1630,7 @@ export default function CheckoutPage() {
             </div>
 
             {/* Loyalty Points */}
-            {user && loyaltyPoints >= 15 && !couponApplied && (
+            {user && promotions.loyaltyEnabled && loyaltyPoints >= promotions.loyaltyMinRedeem && !couponApplied && (
               <div className="bg-white rounded-xl shadow-sm p-6">
                 <div className="flex items-start">
                   <div className="flex-1">
@@ -1106,8 +1638,13 @@ export default function CheckoutPage() {
                       <i className="ri-award-line"></i> Loyalty Reward Available
                     </h3>
                     <p className="text-sm text-gold-700 mt-1">
-                      You have <b>{loyaltyPoints} points</b> (1 point = GH₵ 1 discount).
+                      You have <b>{loyaltyPoints} points</b> (1 point = GH₵ {promotions.loyaltyPointValueGhs} discount).
                       {redeemPoints && <span className="block mt-1">Applying <b>GH₵ {pointsDiscount.toFixed(2)}</b> discount.</span>}
+                      {redeemPoints && wouldHaveDeliveryPromo && (
+                        <span className="block mt-1 text-amber-700 text-xs">
+                          Delivery discounts are paused while Sleek Points are redeemed.
+                        </span>
+                      )}
                     </p>
                   </div>
                   <label className="flex items-center space-x-2 cursor-pointer mt-1">
@@ -1256,6 +1793,76 @@ export default function CheckoutPage() {
                 <i className="ri-shield-check-line"></i>
                 Your payment is secure and encrypted
               </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create-account phone verification modal */}
+      {showOtpModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 text-center border-b border-gray-100">
+              <div className="w-14 h-14 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                <i className="ri-smartphone-line text-2xl text-emerald-600"></i>
+              </div>
+              <h3 className="text-xl font-bold text-gray-900">Verify Your Phone</h3>
+              <p className="text-sm text-gray-500 mt-1">{otpInfo}</p>
+            </div>
+
+            <form onSubmit={verifyCheckoutOtp} className="p-6 space-y-4">
+              {otpError && (
+                <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
+                  {otpError}
+                </div>
+              )}
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-center text-2xl tracking-[0.5em] font-bold focus:ring-2 focus:ring-gold-300 focus:border-gold-400"
+                placeholder="000000"
+                autoFocus
+              />
+              <button
+                type="submit"
+                disabled={otpBusy || otp.length !== 6}
+                className="w-full py-3 bg-gray-900 text-white rounded-xl font-semibold hover:bg-gray-800 transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                {otpBusy ? 'Verifying…' : 'Verify & Continue to Payment'}
+              </button>
+              <button
+                type="button"
+                onClick={() => resendCheckoutOtp()}
+                className="w-full py-2 text-sm font-semibold text-gold-600 hover:text-gold-700 cursor-pointer"
+              >
+                Resend SMS code
+              </button>
+            </form>
+
+            <div className="px-6 pb-6 space-y-2">
+              <button
+                type="button"
+                onClick={() => {
+                  // Never let account trouble block the purchase.
+                  setShowOtpModal(false);
+                  setCheckoutType('guest');
+                  setShowPaymentModal(true);
+                }}
+                className="w-full py-3 border-2 border-gray-200 rounded-xl text-gray-600 font-semibold hover:bg-gray-50 transition-colors cursor-pointer"
+              >
+                Continue as guest instead
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowOtpModal(false)}
+                className="w-full py-2 text-sm text-gray-400 hover:text-gray-600 cursor-pointer"
+              >
+                Cancel
+              </button>
             </div>
           </div>
         </div>

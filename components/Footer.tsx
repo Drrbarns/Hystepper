@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { useCMS } from '@/context/CMSContext';
+import { supabase } from '@/lib/supabase';
 
 export default function Footer() {
   const { getSetting } = useCMS();
@@ -12,14 +13,28 @@ export default function Footer() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const cleaned = email.trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(cleaned)) {
+      setSubmitStatus('error');
+      return;
+    }
     setIsSubmitting(true);
     setSubmitStatus('idle');
 
     try {
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const { error } = await supabase
+        .from('newsletter_subscribers')
+        .insert({ email: cleaned, source: 'footer' });
+
+      // 23505 = already subscribed — treat as success so the visitor isn't
+      // told anything is wrong.
+      if (error && error.code !== '23505' && !/duplicate|unique/i.test(error.message || '')) {
+        throw error;
+      }
       setSubmitStatus('success');
       setEmail('');
     } catch (error) {
+      console.error('Newsletter subscribe failed:', error);
       setSubmitStatus('error');
     } finally {
       setIsSubmitting(false);
@@ -28,8 +43,8 @@ export default function Footer() {
 
   const siteName = getSetting('site_name') || 'Hy-Stepper';
   const siteTagline = getSetting('site_tagline') || 'Stay sleek in style';
-  const contactEmail = getSetting('contact_email') || 'hystepper2@gmail.com';
-  const contactPhone = getSetting('contact_phone') || '0276558163';
+  const contactEmail = getSetting('contact_email')?.replace(/^['"]+|['"]+$/g, '').trim() || 'info@hystepper.com';
+  const contactPhone = getSetting('contact_phone')?.replace(/^['"]+|['"]+$/g, '').trim() || '0276558163';
   const socialInstagram = getSetting('social_instagram') || '';
   const socialFacebook = getSetting('social_facebook') || '';
   const socialTiktok = getSetting('social_tiktok') || '';
@@ -66,6 +81,11 @@ export default function Footer() {
           {submitStatus === 'success' && (
             <p className="text-white text-sm mt-3 text-center md:text-right">
               <i className="ri-checkbox-circle-line mr-1 align-middle"></i> You&apos;re on the list!
+            </p>
+          )}
+          {submitStatus === 'error' && (
+            <p className="text-white text-sm mt-3 text-center md:text-right">
+              <i className="ri-error-warning-line mr-1 align-middle"></i> Couldn&apos;t subscribe right now — check your email and try again.
             </p>
           )}
         </div>
@@ -127,7 +147,7 @@ export default function Footer() {
             <ul className="space-y-3 text-sm">
               <li><Link href="/shop" className="text-gray-400 hover:text-gold-400 transition-colors">All Products</Link></li>
               <li><Link href="/categories" className="text-gray-400 hover:text-gold-400 transition-colors">Categories</Link></li>
-              <li><Link href="/shop?sort=newest" className="text-gray-400 hover:text-gold-400 transition-colors">New Arrivals</Link></li>
+              <li><Link href="/shop?sort=new" className="text-gray-400 hover:text-gold-400 transition-colors">New Arrivals</Link></li>
               <li><Link href="/sale" className="text-gray-400 hover:text-gold-400 transition-colors">Sale</Link></li>
             </ul>
           </div>

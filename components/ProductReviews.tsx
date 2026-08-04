@@ -38,12 +38,20 @@ export default function ProductReviews({ productId }: ProductReviewsProps) {
     content: '',
     guestName: '',
     guestEmail: '',
+    displayName: '',
   });
+  const [postAnonymously, setPostAnonymously] = useState(false);
 
   useEffect(() => {
     // Check auth
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user || null);
+      // Prefill the display name with the customer's first name — they can
+      // change it or choose to stay anonymous before posting.
+      const firstName = session?.user?.user_metadata?.first_name || '';
+      if (firstName) {
+        setReviewForm(prev => (prev.displayName ? prev : { ...prev, displayName: firstName }));
+      }
     });
 
     fetchReviews();
@@ -74,14 +82,15 @@ export default function ProductReviews({ productId }: ProductReviewsProps) {
 
       if (data) {
         // Author label preference:
-        //   1. guest_name (if the reviewer wasn't signed in)
-        //   2. "Verified Customer" (signed-in reviewer; we can't read profile
-        //      names from the public client without extra RLS plumbing)
+        //   1. display_name chosen by a signed-in reviewer
+        //   2. guest_name (reviewer wasn't signed in)
+        //   3. "Anonymous" (reviewer chose to stay anonymous, or legacy rows)
         const formattedReviews = data.map((r: any) => ({
           id: r.id,
-          author: (r.guest_name && String(r.guest_name).trim())
-            ? String(r.guest_name).trim()
-            : 'Verified Customer',
+          author:
+            (r.display_name && String(r.display_name).trim()) ||
+            (r.guest_name && String(r.guest_name).trim()) ||
+            'Anonymous',
           rating: r.rating,
           date: r.created_at,
           verified: r.verified_purchase,
@@ -118,10 +127,11 @@ export default function ProductReviews({ productId }: ProductReviewsProps) {
   const handleSubmitReview = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Guests must give us a name so the review has an author byline.
-    const guestNameTrimmed = reviewForm.guestName.trim();
+    // Guests must give us a name so the review has an author byline —
+    // unless they've chosen to post anonymously.
+    const guestNameTrimmed = postAnonymously ? 'Anonymous' : reviewForm.guestName.trim();
     if (!user && !guestNameTrimmed) {
-      alert('Please tell us your name so we can credit your review.');
+      alert('Please tell us your name (or tick "Post anonymously").');
       return;
     }
     if (!reviewForm.content.trim()) {
@@ -157,6 +167,9 @@ export default function ProductReviews({ productId }: ProductReviewsProps) {
 
       if (user) {
         insertRow.user_id = user.id;
+        insertRow.display_name = postAnonymously
+          ? null
+          : reviewForm.displayName.trim() || null;
       } else {
         insertRow.user_id = null;
         insertRow.guest_name = guestNameTrimmed;
@@ -170,7 +183,8 @@ export default function ProductReviews({ productId }: ProductReviewsProps) {
 
       alert('Thanks! Your review has been submitted and will appear after a quick check.');
       setShowReviewForm(false);
-      setReviewForm({ rating: 5, content: '', guestName: '', guestEmail: '' });
+      setReviewForm({ rating: 5, content: '', guestName: '', guestEmail: '', displayName: '' });
+      setPostAnonymously(false);
       fetchReviews();
 
     } catch (err: any) {
@@ -287,19 +301,37 @@ export default function ProductReviews({ productId }: ProductReviewsProps) {
             </div>
           </div>
 
-          {!user && (
+          {user ? (
+            <div className="mb-4">
+              <label className="block text-sm font-semibold text-gray-900 mb-2">
+                Display Name <span className="text-gray-400 font-normal text-xs">(shown next to your review)</span>
+              </label>
+              <input
+                type="text"
+                value={reviewForm.displayName}
+                onChange={(e) => setReviewForm({ ...reviewForm, displayName: e.target.value })}
+                disabled={postAnonymously}
+                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 disabled:bg-gray-100 disabled:text-gray-400"
+                placeholder="e.g. Linda D."
+                maxLength={60}
+              />
+            </div>
+          ) : (
             <>
               <div className="mb-4 grid sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">Your Name *</label>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    Your Name {postAnonymously ? '' : '*'}
+                  </label>
                   <input
                     type="text"
                     value={reviewForm.guestName}
                     onChange={(e) => setReviewForm({ ...reviewForm, guestName: e.target.value })}
-                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                    disabled={postAnonymously}
+                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 disabled:bg-gray-100 disabled:text-gray-400"
                     placeholder="e.g. Linda D."
                     maxLength={60}
-                    required
+                    required={!postAnonymously}
                   />
                 </div>
                 <div>
@@ -320,6 +352,18 @@ export default function ProductReviews({ productId }: ProductReviewsProps) {
               </p>
             </>
           )}
+
+          <label className="mb-4 flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={postAnonymously}
+              onChange={(e) => setPostAnonymously(e.target.checked)}
+              className="w-4 h-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500"
+            />
+            <span className="text-sm text-gray-700">
+              Post anonymously — your review will show as <span className="font-semibold">“Anonymous”</span>
+            </span>
+          </label>
 
           <div className="mb-4">
             <label className="block text-sm font-semibold text-gray-900 mb-2">Your Review *</label>

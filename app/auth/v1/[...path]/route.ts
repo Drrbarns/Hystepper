@@ -193,7 +193,26 @@ async function handleUser(req: NextRequest) {
   if (req.method === "PUT" || req.method === "PATCH") {
     const body = await req.json().catch(() => ({}));
     if (body.password) {
-      await updateUserPassword(row.id, String(body.password));
+      const newPassword = String(body.password);
+      if (newPassword.length < 6) {
+        return err("Password must be at least 6 characters", 422, "weak_password");
+      }
+      // Sessions minted from a recovery link (amr method 'recovery') may set a
+      // new password directly — that's the whole point of the reset flow.
+      // Regular sessions must prove knowledge of the current password.
+      const amrMethod = String(
+        (verified.payload as any)?.amr?.[0]?.method || "password"
+      );
+      if (amrMethod !== "recovery") {
+        const current = String(body.current_password || "");
+        if (!current) {
+          return err("Current password is required to set a new password", 400, "reauthentication_needed");
+        }
+        if (!(await verifyPassword(row, current))) {
+          return err("Current password is incorrect", 400, "invalid_credentials");
+        }
+      }
+      await updateUserPassword(row.id, newPassword);
     }
     if (body.data || body.user_metadata) {
       await updateUserMetadata(row.id, body.data || body.user_metadata || {});
@@ -269,9 +288,11 @@ async function handleVerify(req: NextRequest) {
 
   if (type === "recovery" && token) {
     const row = await findUserByRecoveryToken(token);
-    if (!row) return err("Invalid recovery token", 401);
+    if (!row) return err("Invalid or expired recovery link", 401, "otp_expired");
     const user = rowToUser(row);
-    const access = await mintAccessToken(user);
+    // Short-lived session flagged as 'recovery' so /auth/v1/user allows the
+    // password change without asking for the (forgotten) current password.
+    const access = await mintAccessToken(user, "1h", "recovery");
     return json(await sessionPayload(user, access));
   }
   return err("Unsupported verify request");

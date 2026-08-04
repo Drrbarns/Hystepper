@@ -6,7 +6,25 @@ import { escapeHtml, maskPhone, maskEmail } from '@/lib/sanitize';
 const resend = new Resend(process.env.RESEND_API_KEY || 'missing_api_key');
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'hystepper2@gmail.com';
-const EMAIL_FROM = process.env.EMAIL_FROM || 'Hy-Stepper <hystepper2@gmail.com>';
+
+/**
+ * Resend can only send from a VERIFIED domain (hystepper.com). A free-mailbox
+ * sender like hystepper2@gmail.com is rejected with a validation error, which
+ * used to make every order receipt fail silently. If EMAIL_FROM points at a
+ * free mailbox, fall back to the verified no-reply sender and keep the gmail
+ * address as Reply-To so customer replies still reach the store inbox.
+ */
+const VERIFIED_FROM = 'Hy_stepper <noreply@hystepper.com>';
+// Coolify wraps env values containing spaces in single quotes — strip them.
+const stripQuotes = (v: string) => v.trim().replace(/^['"]+|['"]+$/g, '').trim();
+const configuredFrom = stripQuotes(process.env.EMAIL_FROM || '');
+const fromIsFreeMailbox = /@(gmail|googlemail|yahoo|hotmail|outlook|icloud|aol)\./i.test(configuredFrom);
+const EMAIL_FROM = configuredFrom && !fromIsFreeMailbox
+    ? configuredFrom
+    : stripQuotes(process.env.AUTH_EMAIL_FROM || '') || VERIFIED_FROM;
+const EMAIL_REPLY_TO = fromIsFreeMailbox
+    ? configuredFrom.replace(/^.*<|>.*$/g, '').trim() || ADMIN_EMAIL
+    : ADMIN_EMAIL;
 
 const BRAND = {
     name: 'Hy-Stepper',
@@ -204,14 +222,21 @@ export async function sendEmail({ to, subject, html }: { to: string; subject: st
         return null;
     }
     try {
-        const data = await resend.emails.send({
+        const result = await resend.emails.send({
             from: EMAIL_FROM,
             to,
             subject,
             html,
+            replyTo: EMAIL_REPLY_TO,
         });
-        console.log('[Email] Sent to:', maskEmail(to));
-        return data;
+        // The Resend SDK reports failures via `error` instead of throwing —
+        // ignoring it made rejected sends look successful in the logs.
+        if (result?.error) {
+            console.error('[Email] Resend rejected send to', maskEmail(to), '|', result.error.message || JSON.stringify(result.error));
+            return null;
+        }
+        console.log('[Email] Sent to:', maskEmail(to), '| id:', result?.data?.id || 'n/a');
+        return result;
     } catch (error: any) {
         console.error('[Email] Failed:', error?.message || error);
         return null;
@@ -777,7 +802,7 @@ export async function sendPosAdminAlert(alert: {
   ${emailInfoRow('Order', `#${escapeHtml(alert.orderNumber)}`)}
   ${emailInfoRow('Type', typeLabel)}
   ${emailInfoRow('Total', `<span style="color:${BRAND.color};font-weight:700;">GH₵${Number(alert.total).toFixed(2)}</span>`)}
-  ${emailInfoRow('Payment', escapeHtml(pay))}
+  ${emailInfoRow('Payment', escapeHtml(payLabel))}
   ${alert.customerName ? emailInfoRow('Customer', escapeHtml(alert.customerName)) : ''}
   ${alert.customerPhone ? emailInfoRow('Phone', escapeHtml(alert.customerPhone)) : ''}
 </table>

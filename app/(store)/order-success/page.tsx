@@ -196,6 +196,7 @@ function OrderSuccessContent() {
   const isPosPlaceholderEmail =
     typeof order.email === 'string' && order.email.toLowerCase() === 'pos@store.local';
   const customerEmail = isPosPlaceholderEmail ? '' : order.email || '';
+  const customerPhone = order.phone || shippingAddr.phone || '';
 
   const paymentState = (order.payment_status || 'pending').toLowerCase();
   const isPaid = paymentState === 'paid';
@@ -259,8 +260,12 @@ function OrderSuccessContent() {
 
   const subline = (() => {
     if (isPaid) {
-      return customerEmail
-        ? `Your order ${order.order_number} is confirmed. A receipt is on its way to ${customerEmail}.`
+      const channels = [
+        customerPhone ? `by SMS to ${customerPhone}` : '',
+        customerEmail ? `by email to ${customerEmail}` : '',
+      ].filter(Boolean);
+      return channels.length > 0
+        ? `Your order ${order.order_number} is confirmed. A receipt is on its way ${channels.join(' and ')}.`
         : `Your order ${order.order_number} is confirmed.`;
     }
     if (isPending) {
@@ -604,14 +609,16 @@ function OrderSuccessContent() {
                     </div>
                   </li>
                 )}
-                {customerEmail && isPaid && (
+                {(customerEmail || customerPhone) && isPaid && (
                   <li className="relative flex gap-4">
                     <div className="relative w-8 h-8 rounded-full bg-gold-50 border border-gold-200 flex items-center justify-center flex-shrink-0">
                       <i className="ri-mail-send-line text-gold-600" />
                     </div>
                     <div>
-                      <p className="text-sm font-semibold text-gray-900">Email confirmation</p>
-                      <p className="text-xs text-gray-500 mt-0.5">Sent to {customerEmail}</p>
+                      <p className="text-sm font-semibold text-gray-900">Order receipt</p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        Sent to {[customerPhone, customerEmail].filter(Boolean).join(' and ')}
+                      </p>
                     </div>
                   </li>
                 )}

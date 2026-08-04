@@ -26,16 +26,20 @@ export default function SalePage() {
     async function fetchSaleProducts() {
       setLoading(true);
       try {
+        // A product is "on sale" when its compare-at price is above the
+        // current price (same rule as the homepage "Discounted Items"
+        // section) — OR when the admin explicitly flagged it with on_sale.
+        // Filtering only on the on_sale flag hid discounted products the
+        // admin never flagged, which is why /sale showed a single item.
         const { data, error } = await supabase
           .from('products')
           .select(`
-            id, name, slug, price, compare_at_price, quantity, rating_avg,
+            id, name, slug, price, compare_at_price, on_sale, quantity, rating_avg,
             categories(name, slug),
             product_images!product_id(url, position),
             product_variants(option2, option3, image_url, quantity)
           `)
           .eq('status', 'active')
-          .eq('on_sale', true)
           .not('product_images.url', 'ilike', 'data:video%')
           .order('position', { foreignTable: 'product_images', ascending: true })
           .limit(1, { foreignTable: 'product_images' })
@@ -43,7 +47,11 @@ export default function SalePage() {
 
         if (error) throw error;
 
-        const formatted: SaleProduct[] = (data || []).map((p: any) => {
+        const saleRows = (data || []).filter(
+          (p: any) => p.on_sale || (Number(p.compare_at_price) || 0) > (Number(p.price) || 0)
+        );
+
+        const formatted: SaleProduct[] = saleRows.map((p: any) => {
           const seen = new Set<string>();
           const colors = (p.product_variants || [])
             .filter((v: any) => v.option2)

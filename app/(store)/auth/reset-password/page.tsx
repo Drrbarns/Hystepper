@@ -11,20 +11,54 @@ export default function ResetPasswordPage() {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  // When the user clicks the email link Supabase opens this page with a
-  // recovery session attached. We listen for the PASSWORD_RECOVERY event
-  // *and* check the current session so the form works in both flows.
+  // The reset email links here as /auth/reset-password#access_token=<recovery
+  // token>&type=recovery. That token is a one-time recovery token — NOT a JWT —
+  // so it must be exchanged via /auth/v1/verify for a real session before the
+  // form can submit. (Relying on detectSessionInUrl fails: there is no
+  // refresh_token in the hash, so supabase-js discards it and getSession()
+  // stays empty, which used to make this page claim the link had expired.)
   useEffect(() => {
     let cancelled = false;
-    const check = async () => {
+
+    const exchange = async () => {
+      const hash = typeof window !== 'undefined' ? window.location.hash.replace(/^#/, '') : '';
+      const params = new URLSearchParams(hash);
+      const token = params.get('access_token') || params.get('token') || '';
+      const type = params.get('type') || '';
+
+      // Already signed in (e.g. second visit after a successful exchange)?
       const { data } = await supabase.auth.getSession();
-      if (!cancelled) setHasRecoverySession(!!data.session);
+      if (data.session) {
+        if (!cancelled) setHasRecoverySession(true);
+        return;
+      }
+
+      if (token && type === 'recovery') {
+        const { data: verified, error: verifyError } = await supabase.auth.verifyOtp({
+          type: 'recovery',
+          token_hash: token,
+        });
+        if (!cancelled) {
+          if (!verifyError && verified?.session) {
+            // Remove the one-time token from the address bar.
+            window.history.replaceState(null, '', window.location.pathname);
+            setHasRecoverySession(true);
+          } else {
+            setHasRecoverySession(false);
+          }
+        }
+        return;
+      }
+
+      if (!cancelled) setHasRecoverySession(false);
     };
-    check();
+
+    exchange();
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') {
         setHasRecoverySession(true);
@@ -140,14 +174,24 @@ export default function ResetPasswordPage() {
 
             <div>
               <label className="block text-sm font-semibold text-gray-900 mb-2">Confirm Password</label>
-              <input
-                type={showPassword ? 'text' : 'password'}
-                value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
-                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-gold-500 focus:border-gold-500"
-                placeholder="Re-enter password"
-                autoComplete="new-password"
-              />
+              <div className="relative">
+                <input
+                  type={showConfirm ? 'text' : 'password'}
+                  value={confirm}
+                  onChange={(e) => setConfirm(e.target.value)}
+                  className="w-full px-4 py-3 pr-12 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-gold-500 focus:border-gold-500"
+                  placeholder="Re-enter password"
+                  autoComplete="new-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirm(!showConfirm)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  aria-label={showConfirm ? 'Hide password' : 'Show password'}
+                >
+                  <i className={`${showConfirm ? 'ri-eye-off-line' : 'ri-eye-line'} text-xl`}></i>
+                </button>
+              </div>
             </div>
 
             <button

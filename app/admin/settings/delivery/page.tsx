@@ -266,7 +266,11 @@ export default function DeliverySettingsPage() {
                     {/* ── Fee adjustments ── */}
                     <div className="mt-6 pt-6 border-t border-gray-100">
                         <h3 className="font-bold text-gray-900 mb-1">Fee Adjustments</h3>
-                        <p className="text-sm text-gray-500 mb-4">Waive or discount the delivery fee for this location — applies to every method and to the base fee.</p>
+                        <p className="text-sm text-gray-500 mb-4">
+                          Waive or discount the delivery fee for this location — applies to every method and to the base fee.
+                          Delivery discounts do not combine with coupons, Sleek Points, or store-wide sale promotions
+                          (sale items in the cart alone are fine).
+                        </p>
                         <div className="grid md:grid-cols-2 gap-6">
                             <div className="p-4 bg-gray-50 rounded-lg border border-gray-100 flex items-center justify-between">
                                 <div>

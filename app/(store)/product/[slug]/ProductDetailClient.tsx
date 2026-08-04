@@ -13,6 +13,7 @@ import { notFound } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
 import { sortSizes } from '@/lib/sort-sizes';
+import { fetchStorePromotions, salePrice } from '@/lib/promotions';
 
 function isLightColor(hex: string | null): boolean {
   if (!hex || typeof hex !== 'string') return false;
@@ -254,6 +255,25 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
           transformedProduct.images = ['/placeholder-product.png'];
         }
 
+        // Apply live store-wide sale for display. Cart still stores the list
+        // price (listPrice); checkout reapplies the current % so ending a sale
+        // mid-cart doesn't leave stale discounted line items unpaid.
+        try {
+          const promo = await fetchStorePromotions();
+          const list = Number(transformedProduct.price) || 0;
+          (transformedProduct as any).listPrice = list;
+          if (promo.storewideSaleEnabled && promo.storewideSalePercent > 0 && list > 0) {
+            const discounted = salePrice(list, promo);
+            const existingCompare = Number(transformedProduct.compare_at_price) || 0;
+            transformedProduct.price = discounted;
+            transformedProduct.compare_at_price = Math.max(existingCompare, list);
+            (transformedProduct as any).storewide_sale_percent = promo.storewideSalePercent;
+            (transformedProduct as any).storewide_sale_name = promo.storewideSaleName || 'Sale';
+          }
+        } catch {
+          /* ignore — show list prices */
+        }
+
         setProduct(transformedProduct);
 
         // Default select first size if available
@@ -399,7 +419,7 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
       return;
     }
 
-    const price = Number(product.price);
+    const price = Number(product.listPrice ?? product.price);
     const maxStock = getEffectiveStock();
 
     const firstImage = (product.images || []).find(
@@ -622,7 +642,6 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
                             className="w-full h-full object-cover bg-gray-100"
                             controls
                             muted
-                            defaultMuted
                             playsInline
                             preload="metadata"
                             controlsList="nodownload noplaybackrate"
@@ -732,7 +751,6 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
                                   src={thumbSrc}
                                   className="w-full h-full object-cover"
                                   muted
-                                  defaultMuted
                                   playsInline
                                   preload="metadata"
                                   poster={thumbPoster}
@@ -791,13 +809,30 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
                     </div>
                     <span className="text-gray-600 font-medium text-sm">{(Number(product.rating) || 0).toFixed(1)}</span>
                     <span className="mx-3 text-gray-300">|</span>
-                    <a href="#reviews" className="text-sm text-gray-500 hover:text-gold-600 transition-colors underline underline-offset-4">Read Reviews</a>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveTab('reviews');
+                        // Wait a tick so the reviews tab is rendered before scrolling.
+                        requestAnimationFrame(() => {
+                          document.getElementById('reviews')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        });
+                      }}
+                      className="text-sm text-gray-500 hover:text-gold-600 transition-colors underline underline-offset-4 cursor-pointer"
+                    >
+                      Read Reviews
+                    </button>
                   </div>
 
                   <div className="flex items-baseline space-x-4 mb-6 p-4 bg-gray-50 rounded-2xl border border-gray-100">
                     <span className="text-4xl font-bold text-gray-900 tracking-tight">GH₵{(Number(product.price) || 0).toFixed(2)}</span>
                     {product.compare_at_price != null && Number(product.compare_at_price) > Number(product.price) && (
                       <span className="text-xl text-gray-400 line-through decoration-gray-300 decoration-2">GH₵{(Number(product.compare_at_price) || 0).toFixed(2)}</span>
+                    )}
+                    {product.storewide_sale_percent > 0 && (
+                      <span className="text-sm font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                        {product.storewide_sale_name || 'Sale'} −{product.storewide_sale_percent}%
+                      </span>
                     )}
                   </div>
 
@@ -1061,6 +1096,17 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
                       </button>
                     </>
                   )}
+
+                  <button
+                    onClick={handleToggleWishlist}
+                    className={`w-full py-4 rounded-xl font-bold transition-all flex items-center justify-center space-x-2 text-lg cursor-pointer border-2 ${isWishlisted
+                      ? 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100'
+                      : 'border-gray-200 bg-white text-gray-700 hover:border-red-200 hover:text-red-500'
+                      }`}
+                  >
+                    <i className={`${isWishlisted ? 'ri-heart-fill' : 'ri-heart-line'} text-xl`}></i>
+                    <span>{isWishlisted ? 'Saved to Wishlist' : 'Add to Wishlist'}</span>
+                  </button>
                 </div>
 
                 {/* Notify Me When Back in Stock — only when the selected variant
@@ -1136,7 +1182,7 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
           </div>
         </section>
 
-        <section className="py-16 bg-white border-t border-gray-100">
+        <section id="reviews" className="py-16 bg-white border-t border-gray-100 scroll-mt-24">
           <div className="max-w-4xl mx-auto px-4 sm:px-6">
             <div className="flex justify-center mb-10">
               <div className="inline-flex bg-gray-100 p-1.5 rounded-2xl">
@@ -1182,7 +1228,7 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
               )}
 
               {activeTab === 'reviews' && (
-                <div id="reviews" className="animate-fade-in-up">
+                <div className="animate-fade-in-up">
                   <ProductReviews productId={product.id} />
                 </div>
               )}

@@ -1,3 +1,5 @@
+import { StoreContactEmail, StoreContactPhone } from '@/components/StoreContact';
+
 export default function PrivacyPage() {
   return (
     <div className="min-h-screen bg-white">
@@ -281,7 +283,7 @@ export default function PrivacyPage() {
             </div>
 
             <p className="text-gray-600 leading-relaxed">
-              To exercise any of these rights, please contact us at <a href="mailto:hystepper2@gmail.com" className="text-emerald-700 font-medium hover:underline">hystepper2@gmail.com</a> or through your account settings. We will respond within 30 days.
+              To exercise any of these rights, please contact us at <StoreContactEmail className="text-emerald-700 font-medium hover:underline" /> or through your account settings. We will respond within 30 days.
             </p>
           </section>
 
@@ -384,7 +386,7 @@ export default function PrivacyPage() {
                   <i className="ri-mail-line text-emerald-700 text-xl mt-1"></i>
                   <div>
                     <p className="font-medium text-gray-900">Email</p>
-                    <a href="mailto:hystepper2@gmail.com" className="text-emerald-700 hover:underline">hystepper2@gmail.com</a>
+                    <StoreContactEmail className="text-emerald-700 hover:underline" />
                   </div>
                 </div>
 
@@ -392,7 +394,7 @@ export default function PrivacyPage() {
                   <i className="ri-phone-line text-emerald-700 text-xl mt-1"></i>
                   <div>
                     <p className="font-medium text-gray-900">Phone</p>
-                    <a href="tel:0276558163" className="text-emerald-700 hover:underline">0276558163</a>
+                    <StoreContactPhone className="text-emerald-700 hover:underline" />
                   </div>
                 </div>
 

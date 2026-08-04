@@ -42,7 +42,9 @@ function AccountContent() {
   });
   const [passwordMessage, setPasswordMessage] = useState({ type: '', text: '' });
   const [passwordLoading, setPasswordLoading] = useState(false);
-  const [showPasswords, setShowPasswords] = useState(false);
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => {
     async function checkUser() {
@@ -79,6 +81,22 @@ function AccountContent() {
       });
 
       if (error) throw error;
+
+      // Keep the public profiles row in sync — that's what admin screens
+      // and order views read for the customer's name and phone.
+      if (user?.id) {
+        const fullName = `${profileData.firstName} ${profileData.lastName}`.trim();
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .update({
+            full_name: fullName || null,
+            phone: profileData.phone || null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', user.id);
+        if (profileError) console.error('Profile table sync failed:', profileError);
+      }
+
       setProfileMessage({ type: 'success', text: 'Profile updated successfully!' });
     } catch (err: any) {
       setProfileMessage({ type: 'error', text: err.message });
@@ -122,9 +140,12 @@ function AccountContent() {
       });
       if (signInError) throw new Error('Current password is incorrect');
 
+      // current_password is also enforced server-side by the auth route, so
+      // it must travel with the update request.
       const { error } = await supabase.auth.updateUser({
         password: passwordData.password,
-      });
+        current_password: passwordData.currentPassword,
+      } as any);
       if (error) throw error;
       setPasswordMessage({ type: 'success', text: 'Password updated successfully!' });
       setPasswordData({ currentPassword: '', password: '', confirmPassword: '' });
@@ -148,21 +169,6 @@ function AccountContent() {
       </div>
     );
   }
-
-  const quickActions = [
-    {
-      icon: 'ri-medal-line',
-      title: 'Loyalty Program',
-      description: 'Earn points and rewards',
-      link: '/loyalty'
-    },
-    {
-      icon: 'ri-user-add-line',
-      title: 'Refer & Earn',
-      description: 'Invite friends and earn rewards',
-      link: '/referral'
-    }
-  ];
 
   return (
     <>
@@ -212,6 +218,13 @@ function AccountContent() {
                       <span>{tab.label}</span>
                     </button>
                   ))}
+                  <Link
+                    href="/loyalty"
+                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all text-left group text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                  >
+                    <i className="ri-medal-line text-xl text-gray-400 group-hover:text-gray-600"></i>
+                    <span>Sleek Points</span>
+                  </Link>
                 </nav>
               </div>
             </div>
@@ -237,6 +250,13 @@ function AccountContent() {
                     <span>{tab.label}</span>
                   </button>
                 ))}
+                <Link
+                  href="/loyalty"
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-full font-medium whitespace-nowrap transition-all border shadow-sm bg-white text-gray-600 border-gray-200 hover:border-gray-300"
+                >
+                  <i className="ri-medal-line"></i>
+                  <span>Points</span>
+                </Link>
               </div>
             </div>
 
@@ -357,7 +377,7 @@ function AccountContent() {
                         <div className="relative">
                           <i className="ri-lock-line absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"></i>
                           <input
-                            type={showPasswords ? 'text' : 'password'}
+                            type={showCurrent ? 'text' : 'password'}
                             value={passwordData.currentPassword}
                             onChange={e => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
                             autoComplete="current-password"
@@ -366,11 +386,11 @@ function AccountContent() {
                           />
                           <button
                             type="button"
-                            onClick={() => setShowPasswords(s => !s)}
+                            onClick={() => setShowCurrent(s => !s)}
                             className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                            aria-label={showPasswords ? 'Hide passwords' : 'Show passwords'}
+                            aria-label={showCurrent ? 'Hide password' : 'Show password'}
                           >
-                            <i className={`${showPasswords ? 'ri-eye-off-line' : 'ri-eye-line'} text-lg`}></i>
+                            <i className={`${showCurrent ? 'ri-eye-off-line' : 'ri-eye-line'} text-lg`}></i>
                           </button>
                         </div>
                       </div>
@@ -381,13 +401,21 @@ function AccountContent() {
                           <div className="relative">
                             <i className="ri-key-2-line absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"></i>
                             <input
-                              type={showPasswords ? 'text' : 'password'}
+                              type={showNew ? 'text' : 'password'}
                               value={passwordData.password}
                               onChange={e => setPasswordData({ ...passwordData, password: e.target.value })}
                               autoComplete="new-password"
-                              className="w-full pl-11 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-gold-50 focus:border-gold-500 transition-all bg-gray-50 focus:bg-white"
+                              className="w-full pl-11 pr-12 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-gold-50 focus:border-gold-500 transition-all bg-gray-50 focus:bg-white"
                               placeholder="At least 6 characters"
                             />
+                            <button
+                              type="button"
+                              onClick={() => setShowNew(s => !s)}
+                              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                              aria-label={showNew ? 'Hide password' : 'Show password'}
+                            >
+                              <i className={`${showNew ? 'ri-eye-off-line' : 'ri-eye-line'} text-lg`}></i>
+                            </button>
                           </div>
                         </div>
                         <div className="space-y-2">
@@ -395,13 +423,21 @@ function AccountContent() {
                           <div className="relative">
                             <i className="ri-lock-check-line absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"></i>
                             <input
-                              type={showPasswords ? 'text' : 'password'}
+                              type={showConfirm ? 'text' : 'password'}
                               value={passwordData.confirmPassword}
                               onChange={e => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
                               autoComplete="new-password"
-                              className="w-full pl-11 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-gold-50 focus:border-gold-500 transition-all bg-gray-50 focus:bg-white"
+                              className="w-full pl-11 pr-12 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-gold-50 focus:border-gold-500 transition-all bg-gray-50 focus:bg-white"
                               placeholder="Re-enter new password"
                             />
+                            <button
+                              type="button"
+                              onClick={() => setShowConfirm(s => !s)}
+                              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                              aria-label={showConfirm ? 'Hide password' : 'Show password'}
+                            >
+                              <i className={`${showConfirm ? 'ri-eye-off-line' : 'ri-eye-line'} text-lg`}></i>
+                            </button>
                           </div>
                         </div>
                       </div>

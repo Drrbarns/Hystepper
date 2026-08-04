@@ -20,6 +20,8 @@ function ShopContent() {
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [priceRange, setPriceRange] = useState([0, 5000]);
   const [selectedRating, setSelectedRating] = useState(0);
+  const [selectedColor, setSelectedColor] = useState('');
+  const [availableColors, setAvailableColors] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState('popular');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [page, setPage] = useState(1);
@@ -37,30 +39,83 @@ function ShopContent() {
   // Active URL-based filters
   const activeHeelHeight = searchParams.get('heel_height');
   const activeSize = searchParams.get('size');
+  const activeSearch = searchParams.get('search');
+  const activeColorParam = searchParams.get('color');
 
   const heelLabels: Record<string, string> = { flat: 'Flat (0–1")', low: 'Low (2–2.5")', mid: 'Mid (3–3.5")', high: 'High (4"+)' };
+
+  const hasActiveFilters =
+    selectedCategory !== 'all' ||
+    priceRange[1] < 5000 ||
+    selectedRating > 0 ||
+    !!selectedColor ||
+    !!activeHeelHeight ||
+    !!activeSize ||
+    !!activeSearch ||
+    (sortBy !== 'popular' && sortBy !== '');
 
   function removeFilter(key: string) {
     const params = new URLSearchParams(searchParams.toString());
     params.delete(key);
+    if (key === 'color') setSelectedColor('');
     const qs = params.toString();
     router.push(qs ? `/shop?${qs}` : '/shop');
   }
 
-  function clearAllUrlFilters() {
+  function clearAllFilters() {
+    setSelectedCategory('all');
+    setPriceRange([0, 5000]);
+    setSelectedRating(0);
+    setSelectedColor('');
+    setSortBy('popular');
+    setPage(1);
+    setIsFilterOpen(false);
     router.push('/shop');
+  }
+
+  function setCategoryFilter(slug: string) {
+    setSelectedCategory(slug);
+    setPage(1);
+    const params = new URLSearchParams(searchParams.toString());
+    if (slug === 'all') params.delete('category');
+    else params.set('category', slug);
+    const qs = params.toString();
+    router.replace(qs ? `/shop?${qs}` : '/shop', { scroll: false });
   }
 
   // Initialize from URL params
   useEffect(() => {
     const category = searchParams.get('category');
     const sort = searchParams.get('sort');
-    const search = searchParams.get('search');
+    const color = searchParams.get('color');
 
-    if (category) setSelectedCategory(category);
+    setSelectedCategory(category || 'all');
     if (sort) setSortBy(sort);
-    // Search is handled in the fetch function via searchParams directly or we could add a state for it
+    else if (![...searchParams.keys()].length) setSortBy('popular');
+    setSelectedColor(color || '');
   }, [searchParams]);
+
+  // Distinct in-stock colours for the filter sidebar
+  useEffect(() => {
+    async function loadColors() {
+      const { data } = await supabase
+        .from('product_variants')
+        .select('option2')
+        .gt('quantity', 0)
+        .not('option2', 'is', null)
+        .neq('option2', '');
+      if (!data) return;
+      const seen = new Map<string, string>();
+      for (const row of data) {
+        const raw = String(row.option2 || '').trim();
+        if (!raw) continue;
+        const key = raw.toLowerCase();
+        if (!seen.has(key)) seen.set(key, raw);
+      }
+      setAvailableColors([...seen.values()].sort((a, b) => a.localeCompare(b)));
+    }
+    void loadColors();
+  }, []);
 
   // Fetch Categories
   useEffect(() => {
@@ -70,7 +125,6 @@ function ShopContent() {
         .select('id, name, slug, parent_id');
 
       if (data) {
-        // Store raw data for hierarchy logic
         setCategories(data);
       }
     }
@@ -87,6 +141,7 @@ function ShopContent() {
           .from('products')
           .select(`
             id, name, slug, price, compare_at_price, quantity, rating_avg, review_count, heel_height, product_code, style_name,
+            sales_count, is_new_arrival, on_sale,
             categories!inner(name, slug),
             product_images!product_id(url, position),
             product_variants(option2, option3, image_url, quantity)
@@ -148,9 +203,9 @@ function ShopContent() {
           query = query.gte('price', priceRange[0]).lte('price', priceRange[1]);
         }
 
-        // Rating Filter
+        // Rating Filter — only meaningful for products that actually have reviews
         if (selectedRating > 0) {
-          query = query.gte('rating_avg', selectedRating);
+          query = query.gt('review_count', 0).gte('rating_avg', selectedRating);
         }
 
         // Heel Height Filter (from URL params)
@@ -173,11 +228,6 @@ function ShopContent() {
         // anything. The canonical size lives in `option1`; we also match
         // `name LIKE '37 / %'` and the bare `name = '37'` case to cover legacy
         // single-option variants where option1 may not be populated.
-        //
-        // The `.gt('quantity', 0)` is the key bit: a product whose only size-37
-        // variant has 0 stock shouldn't show up under "Shop by Size: 37",
-        // because a customer clicking that filter expects results they can
-        // actually buy.
         const sizeParam = searchParams.get('size')?.trim();
         if (sizeParam) {
           const { data: sizeVariants } = await supabase
@@ -194,6 +244,30 @@ function ShopContent() {
           }
         }
 
+        // Colour filter — match option2 case-insensitively (DB has "Black" / "Black ").
+        const colorFilter = (selectedColor || searchParams.get('color') || '').trim();
+        if (colorFilter) {
+          const { data: colorVariants } = await supabase
+            .from('product_variants')
+            .select('product_id, option2')
+            .gt('quantity', 0)
+            .not('option2', 'is', null);
+
+          const matchedIds = [
+            ...new Set(
+              (colorVariants || [])
+                .filter((v: any) => String(v.option2 || '').trim().toLowerCase() === colorFilter.toLowerCase())
+                .map((v: any) => v.product_id)
+            ),
+          ];
+
+          if (matchedIds.length > 0) {
+            query = query.in('id', matchedIds);
+          } else {
+            query = query.in('id', ['00000000-0000-0000-0000-000000000000']);
+          }
+        }
+
         // Sorting
         switch (sortBy) {
           case 'price-low':
@@ -203,16 +277,28 @@ function ShopContent() {
             query = query.order('price', { ascending: false });
             break;
           case 'rating':
-            query = query.order('rating_avg', { ascending: false });
+            // Only products with real reviews; then highest average, then most reviews
+            query = query
+              .gt('review_count', 0)
+              .order('rating_avg', { ascending: false })
+              .order('review_count', { ascending: false });
             break;
           case 'new':
-          case 'newest': // alias used by some nav links
+          case 'newest':
+            // Curated New Arrivals (admin checkbox), newest first
+            query = query
+              .eq('is_new_arrival', true)
+              .order('created_at', { ascending: false });
+            break;
+          case 'recent':
             query = query.order('created_at', { ascending: false });
             break;
           case 'popular':
           default:
-            // Default sort, maybe by views or sales if available, else created_at
-            query = query.order('created_at', { ascending: false });
+            // Units sold (paid orders), then recency as tie-breaker
+            query = query
+              .order('sales_count', { ascending: false })
+              .order('created_at', { ascending: false });
             break;
         }
 
@@ -254,10 +340,14 @@ function ShopContent() {
               originalPrice: p.compare_at_price,
               image: p.product_images?.[0]?.url || '/placeholder-product.png',
               rating: p.rating_avg || 0,
-              reviewCount: 0,
-              badge: p.compare_at_price > p.price ? 'Sale' : undefined,
+              reviewCount: p.review_count || 0,
+              badge: p.is_new_arrival
+                ? 'New'
+                : (p.on_sale || (p.compare_at_price > p.price))
+                  ? 'Sale'
+                  : undefined,
               inStock: effectiveStock > 0,
-              category: p.categories?.name,
+              category: Array.isArray(p.categories) ? p.categories[0]?.name : p.categories?.name,
               colors: colors.length > 0 ? colors : undefined
             };
           });
@@ -273,7 +363,7 @@ function ShopContent() {
     }
 
     fetchProducts();
-  }, [selectedCategory, priceRange, selectedRating, sortBy, page, searchParams, categories]);
+  }, [selectedCategory, priceRange, selectedRating, selectedColor, sortBy, page, searchParams, categories]);
 
   const totalPages = Math.ceil(totalProducts / productsPerPage);
 
@@ -285,11 +375,38 @@ function ShopContent() {
       />
 
       {/* Active Filter Badges */}
-      {(activeHeelHeight || activeSize) && (
+      {hasActiveFilters && (
         <div className="bg-gold-50 border-b border-gold-100">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3">
             <div className="flex items-center gap-3 flex-wrap">
               <span className="text-sm text-gray-500 font-medium">Active filters:</span>
+              {selectedCategory !== 'all' && (
+                <button
+                  onClick={() => {
+                    setSelectedCategory('all');
+                    setPage(1);
+                    removeFilter('category');
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gold-200 rounded-full text-sm font-medium text-gold-700 hover:bg-gold-100 transition-colors group"
+                >
+                  Category: {categories.find((c) => c.slug === selectedCategory)?.name || selectedCategory}
+                  <i className="ri-close-line text-gray-400 group-hover:text-gold-700 transition-colors"></i>
+                </button>
+              )}
+              {selectedColor && (
+                <button
+                  onClick={() => {
+                    setSelectedColor('');
+                    setPage(1);
+                    removeFilter('color');
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gold-200 rounded-full text-sm font-medium text-gold-700 hover:bg-gold-100 transition-colors group"
+                >
+                  <i className="ri-palette-line text-xs"></i>
+                  Colour: {selectedColor}
+                  <i className="ri-close-line text-gray-400 group-hover:text-gold-700 transition-colors"></i>
+                </button>
+              )}
               {activeHeelHeight && (
                 <button
                   onClick={() => removeFilter('heel_height')}
@@ -310,8 +427,44 @@ function ShopContent() {
                   <i className="ri-close-line text-gray-400 group-hover:text-gold-700 transition-colors"></i>
                 </button>
               )}
+              {activeSearch && (
+                <button
+                  onClick={() => removeFilter('search')}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gold-200 rounded-full text-sm font-medium text-gold-700 hover:bg-gold-100 transition-colors group"
+                >
+                  Search: {activeSearch}
+                  <i className="ri-close-line text-gray-400 group-hover:text-gold-700 transition-colors"></i>
+                </button>
+              )}
+              {selectedRating > 0 && (
+                <button
+                  onClick={() => { setSelectedRating(0); setPage(1); }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gold-200 rounded-full text-sm font-medium text-gold-700 hover:bg-gold-100 transition-colors group"
+                >
+                  {selectedRating}+ stars
+                  <i className="ri-close-line text-gray-400 group-hover:text-gold-700 transition-colors"></i>
+                </button>
+              )}
+              {priceRange[1] < 5000 && (
+                <button
+                  onClick={() => { setPriceRange([0, 5000]); setPage(1); }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gold-200 rounded-full text-sm font-medium text-gold-700 hover:bg-gold-100 transition-colors group"
+                >
+                  Max GH₵{priceRange[1]}
+                  <i className="ri-close-line text-gray-400 group-hover:text-gold-700 transition-colors"></i>
+                </button>
+              )}
+              {(sortBy === 'new' || sortBy === 'newest') && (
+                <button
+                  onClick={() => { setSortBy('popular'); setPage(1); }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gold-200 rounded-full text-sm font-medium text-gold-700 hover:bg-gold-100 transition-colors group"
+                >
+                  New Arrivals
+                  <i className="ri-close-line text-gray-400 group-hover:text-gold-700 transition-colors"></i>
+                </button>
+              )}
               <button
-                onClick={clearAllUrlFilters}
+                onClick={clearAllFilters}
                 className="text-sm text-gray-500 hover:text-red-600 underline underline-offset-2 transition-colors"
               >
                 Clear all
@@ -358,8 +511,7 @@ function ShopContent() {
                       <div className="space-y-1">
                         <button
                           onClick={() => {
-                            setSelectedCategory('all');
-                            setPage(1);
+                            setCategoryFilter('all');
                             setIsFilterOpen(false);
                           }}
                           className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${selectedCategory === 'all'
@@ -381,8 +533,7 @@ function ShopContent() {
                             <div key={parent.id} className="space-y-1">
                               <button
                                 onClick={() => {
-                                  setSelectedCategory(parent.slug);
-                                  setPage(1);
+                                  setCategoryFilter(parent.slug);
                                   // Don't close filter immediately if exploring hierarchy
                                 }}
                                 className={`w-full text-left px-4 py-2 rounded-lg transition-colors flex justify-between items-center ${isSelected
@@ -400,8 +551,7 @@ function ShopContent() {
                                     <button
                                       key={child.id}
                                       onClick={() => {
-                                        setSelectedCategory(child.slug);
-                                        setPage(1);
+                                        setCategoryFilter(child.slug);
                                         setIsFilterOpen(false);
                                       }}
                                       className={`w-full text-left px-4 py-1.5 rounded-lg text-sm transition-colors ${selectedCategory === child.slug
@@ -443,6 +593,41 @@ function ShopContent() {
                       </div>
                     </div>
 
+                    {/* Colour */}
+                    {availableColors.length > 0 && (
+                      <div className="border-t border-gray-200 pt-8">
+                        <h3 className="font-semibold text-gray-900 mb-4">Colour</h3>
+                        <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto pr-1">
+                          {availableColors.map((color) => {
+                            const active = selectedColor.toLowerCase() === color.toLowerCase();
+                            return (
+                              <button
+                                key={color}
+                                type="button"
+                                onClick={() => {
+                                  const next = active ? '' : color;
+                                  setSelectedColor(next);
+                                  setPage(1);
+                                  const params = new URLSearchParams(searchParams.toString());
+                                  if (next) params.set('color', next);
+                                  else params.delete('color');
+                                  const qs = params.toString();
+                                  router.replace(qs ? `/shop?${qs}` : '/shop', { scroll: false });
+                                }}
+                                className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${
+                                  active
+                                    ? 'bg-gold-100 border-gold-300 text-gold-800 font-semibold'
+                                    : 'bg-white border-gray-200 text-gray-700 hover:border-gray-300'
+                                }`}
+                              >
+                                {color}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Rating */}
                     <div className="border-t border-gray-200 pt-8">
                       <h3 className="font-semibold text-gray-900 mb-4">Rating</h3>
@@ -473,9 +658,18 @@ function ShopContent() {
                       </div>
                     </div>
 
+                    {hasActiveFilters && (
+                      <button
+                        type="button"
+                        onClick={clearAllFilters}
+                        className="w-full border-2 border-gray-300 text-gray-800 py-3 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+                      >
+                        Clear All Filters
+                      </button>
+                    )}
+
                     <button
                       onClick={() => {
-                        // Re-fetch handled by effect dependencies
                         setIsFilterOpen(false);
                       }}
                       className="w-full bg-gray-900 hover:bg-gold-600 text-white py-3 rounded-lg font-medium transition-colors whitespace-nowrap"
@@ -496,15 +690,21 @@ function ShopContent() {
                 <div className="flex items-center space-x-3">
                   <label className="text-sm text-gray-600 whitespace-nowrap">Sort by:</label>
                   <select
-                    value={sortBy}
+                    value={sortBy === 'newest' ? 'new' : sortBy}
                     onChange={(e) => {
                       setSortBy(e.target.value);
                       setPage(1);
+                      const params = new URLSearchParams(searchParams.toString());
+                      if (e.target.value === 'popular') params.delete('sort');
+                      else params.set('sort', e.target.value);
+                      const qs = params.toString();
+                      router.replace(qs ? `/shop?${qs}` : '/shop', { scroll: false });
                     }}
                     className="px-4 py-2 pr-8 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gold-500 focus:border-gold-500 text-sm bg-white cursor-pointer"
                   >
                     <option value="popular">Most Popular</option>
-                    <option value="new">Newest</option>
+                    <option value="new">New Arrivals</option>
+                    <option value="recent">Recently Added</option>
                     <option value="price-low">Price: Low to High</option>
                     <option value="price-high">Price: High to Low</option>
                     <option value="rating">Highest Rated</option>
@@ -534,14 +734,15 @@ function ShopContent() {
                         <i className="ri-inbox-line text-4xl text-gray-400"></i>
                       </div>
                       <h3 className="text-2xl font-bold text-gray-900 mb-2">No Products Found</h3>
-                      <p className="text-gray-600 mb-8">Try adjusting your filters to find what you're looking for</p>
+                      <p className="text-gray-600 mb-8">
+                        {(sortBy === 'new' || sortBy === 'newest')
+                          ? 'No products are marked as New Arrivals yet. Mark items in the admin product editor to show them here.'
+                          : sortBy === 'rating'
+                            ? 'No rated products yet. Highest Rated only shows products with customer reviews.'
+                            : 'Try adjusting your filters to find what you\'re looking for'}
+                      </p>
                       <button
-                        onClick={() => {
-                          setSelectedCategory('all');
-                          setPriceRange([0, 5000]);
-                          setSelectedRating(0);
-                          setPage(1);
-                        }}
+                        onClick={clearAllFilters}
                         className="inline-flex items-center bg-gray-900 hover:bg-gold-600 text-white px-6 py-3 rounded-lg font-medium transition-colors whitespace-nowrap"
                       >
                         Clear All Filters

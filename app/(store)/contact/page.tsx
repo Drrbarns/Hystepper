@@ -40,23 +40,20 @@ export default function ContactPage() {
     setSubmitStatus('idle');
 
     try {
-      // Store in Supabase
+      // Store in the DB so admins can read it under Admin → Messages.
       const { error } = await supabase
         .from('contact_submissions')
         .insert({
-          name: formData.name,
-          email: formData.email,
-          phone: formData.phone,
-          subject: formData.subject,
-          message: formData.message,
+          name: formData.name.trim(),
+          email: formData.email.trim(),
+          phone: formData.phone.trim() || null,
+          subject: formData.subject.trim(),
+          message: formData.message.trim(),
         });
 
-      if (error) {
-        // Table might not exist, still show success
-        console.log('Note: contact_submissions table may not exist');
-      }
+      if (error) throw error;
 
-      // Send Contact Notification
+      // Also email the store inbox so messages aren't missed.
       fetch('/api/notifications', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -69,16 +66,19 @@ export default function ContactPage() {
       setSubmitStatus('success');
       setFormData({ name: '', email: '', phone: '', subject: '', message: '' });
     } catch (error) {
+      console.error('Contact form submit failed:', error);
       setSubmitStatus('error');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Get contact details from CMS settings
-  const contactEmail = 'hystepper2@gmail.com';
-  const contactPhone = getSetting('contact_phone') || '0276558163';
-  const contactAddress = getSetting('contact_address') || 'Accra, Ghana';
+  // Contact details always come from Admin → Settings → Contact
+  // so one update reflects across the whole storefront.
+  const contactEmail = getSetting('contact_email')?.replace(/^['"]+|['"]+$/g, '').trim() || 'info@hystepper.com';
+  const contactPhone = getSetting('contact_phone')?.replace(/^['"]+|['"]+$/g, '').trim() || '0276558163';
+  const contactAddress = getSetting('contact_address')?.replace(/^['"]+|['"]+$/g, '').trim() || 'Accra, Ghana';
+  const whatsappNumber = (getSetting('whatsapp_number') || contactPhone).replace(/\D/g, '');
 
   const heroTitle = pageContent?.title || 'Get In Touch';
   const heroSubtitle = pageContent?.subtitle || 'Have a question or need assistance?';
@@ -103,7 +103,7 @@ export default function ContactPage() {
       icon: 'ri-whatsapp-line',
       title: 'WhatsApp',
       value: contactPhone,
-      link: `https://wa.me/${contactPhone.replace(/\s/g, '').replace('+', '')}`,
+      link: whatsappNumber ? `https://wa.me/${whatsappNumber}` : `tel:${contactPhone.replace(/\s/g, '')}`,
       description: 'Chat with us instantly'
     }
   ];

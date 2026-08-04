@@ -76,6 +76,7 @@ export default function InventoryManagementPage() {
 
   const lowStockCount = products.filter(p => p.status === 'low').length;
   const outOfStockCount = products.filter(p => p.status === 'out').length;
+  const totalStock = products.reduce((sum, p) => sum + (Number(p.currentStock) || 0), 0);
   const totalValue = products.reduce((sum, p) => sum + (p.currentStock * p.price), 0); // Using Price as Value
 
   const toggleProductSelection = (id: string) => {
@@ -275,7 +276,7 @@ export default function InventoryManagementPage() {
           </Link>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
           <div className="bg-white rounded-xl shadow-sm p-6">
             <div className="flex items-center justify-between">
               <div>
@@ -284,6 +285,18 @@ export default function InventoryManagementPage() {
               </div>
               <div className="w-12 h-12 flex items-center justify-center bg-blue-100 rounded-lg">
                 <i className="ri-stack-line text-2xl text-blue-600"></i>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600 mb-1">Total Stock</p>
+                <p className="text-3xl font-bold text-indigo-600">{totalStock.toLocaleString()}</p>
+              </div>
+              <div className="w-12 h-12 flex items-center justify-center bg-indigo-100 rounded-lg">
+                <i className="ri-archive-line text-2xl text-indigo-600"></i>
               </div>
             </div>
           </div>

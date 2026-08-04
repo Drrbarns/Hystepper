@@ -69,7 +69,7 @@ export default function CartPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <PageHero title="Shopping Cart" />
-      <div className="py-12 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="py-8 sm:py-12 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 
         <CartCountdown />
         {/* <FreeShippingBar currentAmount={subtotal} threshold={200} /> */}
@@ -209,7 +209,7 @@ export default function CartPage() {
                 </div>
 
                 <div className="space-y-6">
-                  <div className="bg-white rounded-xl shadow-sm p-6 sticky top-24">
+                  <div className="bg-white rounded-xl shadow-sm p-6 lg:sticky lg:top-24">
                     <h3 className="text-xl font-bold text-gray-900 mb-6">Order Summary</h3>
 
                     <div className="space-y-4 mb-6">
@@ -249,14 +249,14 @@ export default function CartPage() {
 
                     <Link
                       href="/checkout"
-                      className="block w-full bg-gold-600 hover:bg-gold-700 text-white py-4 rounded-lg font-semibold text-center transition-colors mt-6 mb-3 whitespace-nowrap"
+                      className="block w-full bg-gold-600 hover:bg-gold-700 text-white py-4 rounded-lg font-semibold text-center transition-colors mt-6 mb-3"
                     >
                       Proceed to Checkout
                     </Link>
 
                     <Link
                       href="/shop"
-                      className="block w-full text-center text-gold-600 hover:text-gold-700 font-semibold py-2 whitespace-nowrap"
+                      className="block w-full text-center text-gold-600 hover:text-gold-700 font-semibold py-2"
                     >
                       Continue Shopping
                     </Link>

@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 import ProductCard from '@/components/ProductCard';
 import type { HeroSlide } from '@/lib/homepage-hero';
 import { heroSlidesWithImage } from '@/lib/homepage-hero';
+import { fetchStorePromotions, salePrice } from '@/lib/promotions';
 
 export default function HomePageClient({
   initialHeroSlides,
@@ -59,6 +60,11 @@ export default function HomePageClient({
         if (productsError) console.error('Error fetching home products:', productsError);
 
         if (productsData) {
+          let promo = { storewideSaleEnabled: false, storewideSalePercent: 0, storewideSaleName: '' };
+          try {
+            promo = await fetchStorePromotions();
+          } catch { /* ignore */ }
+
           const formatted = productsData.map(p => {
             const seen = new Set();
             const colors = (p.product_variants || [])
@@ -72,11 +78,18 @@ export default function HomePageClient({
               ? (p.product_variants || []).reduce((sum: number, v: any) => sum + (Number(v?.quantity) || 0), 0)
               : (Number(p.quantity) || 0);
 
+            const list = Number(p.price) || 0;
+            const onStorewide = promo.storewideSaleEnabled && promo.storewideSalePercent > 0;
+            const displayPrice = onStorewide ? salePrice(list, promo) : list;
+            const original = onStorewide
+              ? Math.max(Number(p.compare_at_price) || 0, list)
+              : p.compare_at_price;
+
             return {
               id: p.slug,
               name: p.name,
-              price: p.price,
-              originalPrice: p.compare_at_price,
+              price: displayPrice,
+              originalPrice: original && original > displayPrice ? original : undefined,
               image: p.product_images?.find((img: any) => img.position === 0)?.url
                 || p.product_images?.[0]?.url
                 || '/placeholder-product.png',
@@ -84,7 +97,8 @@ export default function HomePageClient({
               reviewCount: p.review_count || 0,
               slug: p.slug,
               inStock: effectiveStock > 0,
-              colors: colors.length > 0 ? colors : undefined
+              colors: colors.length > 0 ? colors : undefined,
+              badge: (onStorewide || (Number(p.compare_at_price) || 0) > list) ? 'Sale' : undefined,
             };
           });
           setFeaturedProducts(formatted);
@@ -109,8 +123,13 @@ export default function HomePageClient({
         if (discountError) console.error('Error fetching discounted products:', discountError);
 
         if (discountData) {
+          let promo = { storewideSaleEnabled: false, storewideSalePercent: 0 };
+          try {
+            promo = await fetchStorePromotions();
+          } catch { /* ignore */ }
+
           const discounted = discountData
-            .filter(p => p.compare_at_price > p.price)
+            .filter(p => p.compare_at_price > p.price || (promo.storewideSaleEnabled && promo.storewideSalePercent > 0))
             .map(p => {
               const seen = new Set();
               const colors = (p.product_variants || [])
@@ -124,11 +143,18 @@ export default function HomePageClient({
                 ? (p.product_variants || []).reduce((sum: number, v: any) => sum + (Number(v?.quantity) || 0), 0)
                 : (Number(p.quantity) || 0);
 
+              const list = Number(p.price) || 0;
+              const onStorewide = promo.storewideSaleEnabled && promo.storewideSalePercent > 0;
+              const displayPrice = onStorewide ? salePrice(list, promo) : list;
+              const original = onStorewide
+                ? Math.max(Number(p.compare_at_price) || 0, list)
+                : p.compare_at_price;
+
               return {
                 id: p.slug,
                 name: p.name,
-                price: p.price,
-                originalPrice: p.compare_at_price,
+                price: displayPrice,
+                originalPrice: original && original > displayPrice ? original : undefined,
                 image: p.product_images?.find((img: any) => img.position === 0)?.url
                   || p.product_images?.[0]?.url
                   || '/placeholder-product.png',

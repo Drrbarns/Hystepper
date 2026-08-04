@@ -79,14 +79,18 @@ function rowToUser(row: any): AppUser {
   };
 }
 
-export async function mintAccessToken(user: AppUser, expiresIn = "7d"): Promise<string> {
+export async function mintAccessToken(
+  user: AppUser,
+  expiresIn = "7d",
+  amrMethod: "password" | "recovery" | "otp" = "password"
+): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   return new SignJWT({
     role: "authenticated",
     email: user.email,
     app_metadata: user.app_metadata,
     user_metadata: user.user_metadata,
-    amr: [{ method: "password", timestamp: now }],
+    amr: [{ method: amrMethod, timestamp: now }],
   })
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setSubject(user.id)
@@ -384,9 +388,16 @@ export async function setRecoveryToken(email: string): Promise<string | null> {
   return token;
 }
 
+/** Recovery links are valid for 1 hour from the moment the email is sent. */
 export async function findUserByRecoveryToken(token: string) {
+  if (!token || token.length < 16) return null;
   const { rows } = await query<any>(
-    `SELECT * FROM auth.users WHERE recovery_token = $1 AND deleted_at IS NULL LIMIT 1`,
+    `SELECT * FROM auth.users
+     WHERE recovery_token = $1
+       AND recovery_token <> ''
+       AND recovery_sent_at > now() - interval '1 hour'
+       AND deleted_at IS NULL
+     LIMIT 1`,
     [token]
   );
   return rows[0] || null;

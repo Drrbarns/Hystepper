@@ -53,11 +53,11 @@ async function extractUploadBody(
     let file: File | Blob | null = (form.get("") as File | null) || null;
     if (!file) {
       for (const value of form.values()) {
-        if (typeof value === "object" && value !== null && typeof (value as Blob).arrayBuffer === "function") {
-          const maybe = value as File;
+        if (value instanceof Blob) {
           // Prefer entries that look like files (have a name or non-text type)
-          if ("name" in maybe || (maybe.type && !maybe.type.startsWith("text/"))) {
-            file = maybe;
+          const entryType = value.type || "";
+          if ((value as File).name || (entryType && !entryType.startsWith("text/"))) {
+            file = value;
             break;
           }
         }

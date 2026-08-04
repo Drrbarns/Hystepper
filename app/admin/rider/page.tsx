@@ -46,6 +46,34 @@ const STATUS_COLORS: Record<string, string> = {
 const TERMINAL_SUCCESS = ['delivered', 'completed'];
 const TERMINAL_INACTIVE = ['delivered', 'completed', 'returned', 'cancelled'];
 
+/**
+ * What (if anything) must the rider collect from the customer?
+ *
+ * - payment_status 'paid' covers only `metadata.payable_now`; with the
+ *   "Pay Item Cost Only" checkout option the delivery fee is still owed
+ *   in cash (`metadata.delivery_fee_due`).
+ * - Pay-on-delivery orders: rider collects the full total.
+ * - Unpaid online orders: payment never went through — collect full total.
+ */
+type CollectionInfo =
+  | { kind: 'none' }
+  | { kind: 'delivery_fee'; amount: number }
+  | { kind: 'full'; amount: number; unconfirmed: boolean };
+
+function getCollectionInfo(o: Order): CollectionInfo {
+  const meta = (o.metadata || {}) as Record<string, unknown>;
+  const isPaid = (o.payment_status || '').toLowerCase() === 'paid';
+  const isPOD = o.payment_method === 'pay_on_delivery' || Boolean(meta.pay_on_delivery);
+  const deliveryDue = Number(meta.delivery_fee_due) || 0;
+
+  if (isPaid) {
+    return deliveryDue > 0
+      ? { kind: 'delivery_fee', amount: deliveryDue }
+      : { kind: 'none' };
+  }
+  return { kind: 'full', amount: Number(o.total) || 0, unconfirmed: !isPOD };
+}
+
 export default function RiderPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -381,6 +409,7 @@ export default function RiderPage() {
             const isReturned = order.status === 'returned';
             const isTerminal = isSuccess || isReturned || order.status === 'cancelled';
             const address = getAddress(order);
+            const collection = getCollectionInfo(order);
 
             return (
               <div
@@ -417,6 +446,19 @@ export default function RiderPage() {
                       {order.rider_notes && (
                         <span className="text-xs bg-amber-100 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full flex items-center gap-1">
                           <i className="ri-sticky-note-line"></i> Note
+                        </span>
+                      )}
+                      {collection.kind === 'none' ? (
+                        <span className="text-xs font-semibold bg-emerald-100 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <i className="ri-checkbox-circle-fill"></i> Paid — collect nothing
+                        </span>
+                      ) : collection.kind === 'delivery_fee' ? (
+                        <span className="text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <i className="ri-cash-line"></i> Collect delivery fee GH₵ {collection.amount.toFixed(2)}
+                        </span>
+                      ) : (
+                        <span className="text-xs font-semibold bg-red-100 text-red-700 border border-red-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <i className="ri-cash-line"></i> Collect GH₵ {collection.amount.toFixed(2)}
                         </span>
                       )}
                     </div>
@@ -575,7 +617,18 @@ export default function RiderPage() {
                       </div>
                       {order.shipping_total > 0 && (
                         <div className="flex justify-between text-sm text-gray-600">
-                          <span>Delivery fee</span>
+                          <span className="flex items-center gap-1.5">
+                            Delivery fee
+                            {collection.kind === 'delivery_fee' ? (
+                              <span className="text-[10px] font-bold uppercase tracking-wide bg-amber-100 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded">
+                                Not paid — collect
+                              </span>
+                            ) : collection.kind === 'none' ? (
+                              <span className="text-[10px] font-bold uppercase tracking-wide bg-emerald-100 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded">
+                                Paid
+                              </span>
+                            ) : null}
+                          </span>
                           <span>GH₵ {order.shipping_total?.toFixed(2)}</span>
                         </div>
                       )}
@@ -583,12 +636,58 @@ export default function RiderPage() {
                         <span>Total</span>
                         <span>GH₵ {order.total?.toFixed(2)}</span>
                       </div>
+                      {collection.kind === 'delivery_fee' && (
+                        <div className="flex justify-between text-sm text-emerald-700 font-medium">
+                          <span>Paid online (items)</span>
+                          <span>GH₵ {Math.max(0, (Number(order.total) || 0) - collection.amount).toFixed(2)}</span>
+                        </div>
+                      )}
                       {order.payment_method && (
                         <p className="text-xs text-gray-400 text-right pt-1">
                           Payment: {order.payment_method}
+                          {order.payment_status ? ` · ${order.payment_status}` : ''}
                         </p>
                       )}
                     </div>
+
+                    {/* What the rider must collect */}
+                    {collection.kind === 'none' ? (
+                      <div className="flex items-start gap-3 bg-emerald-50 border-2 border-emerald-200 rounded-xl px-4 py-3">
+                        <i className="ri-checkbox-circle-fill text-emerald-600 text-xl shrink-0 mt-0.5"></i>
+                        <div>
+                          <p className="text-sm font-bold text-emerald-800">Fully paid — do not collect any money</p>
+                          <p className="text-xs text-emerald-700 mt-0.5">
+                            The order and delivery fee are already paid. Just hand over the package.
+                          </p>
+                        </div>
+                      </div>
+                    ) : collection.kind === 'delivery_fee' ? (
+                      <div className="flex items-start gap-3 bg-amber-50 border-2 border-amber-300 rounded-xl px-4 py-3">
+                        <i className="ri-cash-line text-amber-600 text-xl shrink-0 mt-0.5"></i>
+                        <div>
+                          <p className="text-sm font-bold text-amber-900">
+                            Collect delivery fee: GH₵ {collection.amount.toFixed(2)}
+                          </p>
+                          <p className="text-xs text-amber-800 mt-0.5">
+                            The customer paid for the items online but NOT the delivery fee. Collect it in cash or MoMo.
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-start gap-3 bg-red-50 border-2 border-red-200 rounded-xl px-4 py-3">
+                        <i className="ri-cash-line text-red-600 text-xl shrink-0 mt-0.5"></i>
+                        <div>
+                          <p className="text-sm font-bold text-red-800">
+                            Collect full amount: GH₵ {collection.amount.toFixed(2)}
+                          </p>
+                          <p className="text-xs text-red-700 mt-0.5">
+                            {collection.unconfirmed
+                              ? 'Online payment was not confirmed. Collect the full amount, or contact the store before handing over.'
+                              : 'Pay on delivery — nothing has been paid. Collect the full amount before handing over.'}
+                          </p>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Order meta */}
                     <div className="flex items-center justify-between text-xs text-gray-400 px-1">
