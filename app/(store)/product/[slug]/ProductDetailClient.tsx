@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
+import { productImageSrc, toStoragePath } from '@/lib/media-url';
 import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -614,9 +615,13 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
                     const currentMedia = (colorOverrideImage && typeof colorOverrideImage === 'string' && colorOverrideImage.trim())
                       ? colorOverrideImage.trim()
                       : (images[selectedImage] ?? fallback);
-                    const safeSrc = typeof currentMedia === 'string' && currentMedia.trim() ? currentMedia.trim() : fallback;
-                    const isVideo = isProductVideoUrl(safeSrc);
-                    const videoSrc = isVideo ? videoPreviewSrc(safeSrc) : safeSrc;
+                    const rawSrc = typeof currentMedia === 'string' && currentMedia.trim() ? currentMedia.trim() : fallback;
+                    const isVideo = isProductVideoUrl(rawSrc);
+                    const videoSrc = isVideo ? videoPreviewSrc(rawSrc) : rawSrc;
+                    // Detail hero: large derived WebP (much smaller than full JPEG over mobile).
+                    const safeSrc = isVideo
+                      ? videoSrc
+                      : productImageSrc(toStoragePath(rawSrc) || rawSrc, { width: 1080 });
 
                     return (
                   <div
@@ -674,17 +679,18 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
                         );
                       }
 
+                      // Native img for storage-derived WebP — avoids Next optimizer
+                      // re-fetching and re-encoding an already-resized asset.
                       return (
-                        <Image
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
                           key={safeSrc}
                           src={safeSrc}
                           alt={product.name || 'Product'}
-                          fill
-                          sizes="(max-width: 1024px) 100vw, 60vw"
-                          className="object-cover object-center transition-opacity duration-500"
-                          unoptimized={!!colorOverrideImage}
+                          className="absolute inset-0 w-full h-full object-cover object-center transition-opacity duration-500"
                           onError={() => setMainImageError(true)}
-                          priority
+                          decoding="async"
+                          fetchPriority="high"
                         />
                       );
                     })()}
@@ -767,10 +773,14 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
                             ) : (
                               // eslint-disable-next-line @next/next/no-img-element
                               <img
-                                src={typeof image === 'string' && image ? image : '/placeholder-product.png'}
+                                src={productImageSrc(
+                                  typeof image === 'string' && image ? image : '/placeholder-product.png',
+                                  { width: 320 }
+                                )}
                                 alt={`${product.name || 'Product'} view ${index + 1}`}
                                 className="w-full h-full object-cover object-center"
                                 loading="lazy"
+                                decoding="async"
                               />
                             )}
                           </button>

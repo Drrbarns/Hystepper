@@ -417,7 +417,7 @@ export default function HomePageClient({
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
               {featuredProducts.map((product, idx) => (
                 <div key={product.id} className="animate-fade-in-up" style={{ animationDelay: `${idx * 100}ms` }}>
-                  <ProductCard {...product} />
+                  <ProductCard {...product} priority={idx < 4} />
                 </div>
               ))}
             </div>

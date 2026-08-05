@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import LazyImage from './LazyImage';
+import { productImageSrc } from '@/lib/media-url';
 import { useCart } from '@/context/CartContext';
 
 interface ProductCardProps {
@@ -16,6 +17,8 @@ interface ProductCardProps {
   badge?: string;
   inStock?: boolean;
   colors?: { name: string; hex: string | null; image?: string | null }[];
+  /** Eager-load hero row images (above the fold). */
+  priority?: boolean;
 }
 
 export default function ProductCard({
@@ -28,7 +31,8 @@ export default function ProductCard({
   reviewCount = 0,
   badge,
   inStock = true,
-  colors
+  colors,
+  priority = false,
 }: ProductCardProps) {
   const { addToCart } = useCart();
   const discount = originalPrice ? Math.round((1 - price / originalPrice) * 100) : 0;
@@ -48,6 +52,8 @@ export default function ProductCard({
           src={safeDisplayImage}
           alt={name || 'Product'}
           className="w-full h-full object-cover object-top group-hover:scale-110 transition-transform duration-500"
+          thumbWidth={480}
+          priority={priority}
         />
         {badge && (
           <span className="absolute top-3 left-3 bg-gold-600 text-white text-xs font-semibold px-3 py-1 rounded-full">
@@ -89,7 +95,13 @@ export default function ProductCard({
                     onMouseEnter={() => setHoveredColor(cName)}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={cImage} alt={cName} className="w-full h-full object-cover" />
+                    <img
+                      src={productImageSrc(cImage, { width: 160 })}
+                      alt={cName}
+                      className="w-full h-full object-cover"
+                      loading="lazy"
+                      decoding="async"
+                    />
                   </span>
                 );
               }

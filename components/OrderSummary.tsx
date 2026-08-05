@@ -1,3 +1,5 @@
+import { productImageSrc } from '@/lib/media-url';
+
 interface OrderItem {
   id: string;
   name: string;
@@ -28,9 +30,11 @@ export default function OrderSummary({ items, subtotal, shipping, tax, total, pa
           <div key={`${item.id}-${item.variant || 'novar'}`} className="flex space-x-4">
             <div className="relative w-20 h-20 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
               <img
-                src={item.image || '/placeholder-product.png'}
+                src={productImageSrc(item.image || '/placeholder-product.png', { width: 160 })}
                 alt={item.name || 'Product'}
                 className="w-full h-full object-cover"
+                loading="lazy"
+                decoding="async"
               />
               <div className="absolute -top-2 -right-2 w-6 h-6 flex items-center justify-center bg-gold-600 text-white text-xs font-bold rounded-full">
                 {item.quantity}

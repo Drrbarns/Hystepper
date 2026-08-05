@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import Image from 'next/image';
+import { productImageSrc } from '@/lib/media-url';
 
 interface LazyImageProps {
   src: string;
@@ -13,10 +13,19 @@ interface LazyImageProps {
   onLoad?: () => void;
   fill?: boolean;
   sizes?: string;
+  /** Requested thumb width for /storage images (default 480 for cards). */
+  thumbWidth?: number;
+  /** Use full original (product detail). */
+  fullResolution?: boolean;
 }
 
 const FALLBACK_SRC = '/placeholder-product.png';
 
+/**
+ * Fast product imagery: host-relative storage + derived WebP thumbs.
+ * Uses native <img> for /storage paths (avoids Next optimizer re-fetching
+ * the full original before resizing — critical on mobile grids).
+ */
 export default function LazyImage({
   src,
   alt,
@@ -26,12 +35,19 @@ export default function LazyImage({
   priority = false,
   onLoad,
   fill,
-  sizes = '(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw'
+  thumbWidth = 480,
+  fullResolution = false,
 }: LazyImageProps) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
-  const safeSrc = typeof src === 'string' && src.trim() ? src : FALLBACK_SRC;
-  const isDataUrl = safeSrc.startsWith('data:');
+  const raw = typeof src === 'string' && src.trim() ? src.trim() : FALLBACK_SRC;
+  const isDataUrl = raw.startsWith('data:');
+  const optimized = isDataUrl
+    ? raw
+    : fullResolution
+      ? productImageSrc(raw, { width: 1080 })
+      : productImageSrc(raw, { width: thumbWidth });
+  const safeSrc = hasError ? FALLBACK_SRC : (optimized || FALLBACK_SRC);
 
   const handleLoad = () => {
     setIsLoaded(true);
@@ -39,65 +55,33 @@ export default function LazyImage({
   };
 
   const handleError = () => {
-    setHasError(true);
-    setIsLoaded(true);
-    onLoad?.();
+    if (!hasError) {
+      setHasError(true);
+      setIsLoaded(true);
+      onLoad?.();
+    }
   };
 
   const useFill = fill || (!width && !height);
 
-  if (isDataUrl || hasError) {
-    return (
-      <div className={`relative overflow-hidden ${className}`} style={!useFill ? { width, height } : undefined}>
-        {hasError ? (
-          <div className="absolute inset-0 bg-gray-100 flex items-center justify-center">
-            <i className="ri-image-line text-2xl text-gray-400"></i>
-          </div>
-        ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={safeSrc}
-            alt={alt || 'Product'}
-            className={`w-full h-full object-cover object-top`}
-            onLoad={handleLoad}
-            onError={handleError}
-            loading="lazy"
-          />
-        )}
-      </div>
-    );
-  }
-
   return (
     <div className={`relative overflow-hidden ${className}`} style={!useFill ? { width, height } : undefined}>
       {!isLoaded && (
-        <div className="absolute inset-0 bg-gray-200 animate-pulse"></div>
+        <div className="absolute inset-0 bg-gray-100 animate-pulse" aria-hidden />
       )}
-      {useFill ? (
-        <Image
-          src={safeSrc}
-          alt={alt || 'Product'}
-          fill
-          sizes={sizes}
-          className={`object-cover object-top transition-opacity duration-300 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
-          onLoad={handleLoad}
-          onError={handleError}
-          priority={priority}
-          loading={priority ? 'eager' : 'lazy'}
-        />
-      ) : (
-        <Image
-          src={safeSrc}
-          alt={alt || 'Product'}
-          width={width!}
-          height={height!}
-          className={`transition-opacity duration-300 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
-          onLoad={handleLoad}
-          onError={handleError}
-          priority={priority}
-          loading={priority ? 'eager' : 'lazy'}
-        />
-      )}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={safeSrc}
+        alt={alt || 'Product'}
+        width={width || thumbWidth}
+        height={height || thumbWidth}
+        className={`${useFill ? 'absolute inset-0 w-full h-full' : 'w-full h-full'} object-cover object-top transition-opacity duration-200 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
+        onLoad={handleLoad}
+        onError={handleError}
+        loading={priority ? 'eager' : 'lazy'}
+        decoding="async"
+        fetchPriority={priority ? 'high' : 'auto'}
+      />
     </div>
   );
 }

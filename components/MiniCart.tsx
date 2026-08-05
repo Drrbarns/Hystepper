@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import Link from 'next/link';
 import { useCart } from '@/context/CartContext';
+import { productImageSrc } from '@/lib/media-url';
 
 interface MiniCartProps {
   isOpen: boolean;
@@ -67,10 +68,11 @@ export default function MiniCart({ isOpen, onClose }: MiniCartProps) {
                     <div className="w-20 h-20 bg-white rounded-lg overflow-hidden flex-shrink-0 border border-gray-200">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={item.image || '/placeholder-product.png'}
+                        src={productImageSrc(item.image || '/placeholder-product.png', { width: 160 })}
                         alt={item.name || 'Product'}
                         className="w-full h-full object-cover object-center"
                         loading="lazy"
+                        decoding="async"
                       />
                     </div>
 
