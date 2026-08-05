@@ -22,6 +22,8 @@ function ShopContent() {
   const [selectedRating, setSelectedRating] = useState(0);
   const [selectedColor, setSelectedColor] = useState('');
   const [availableColors, setAvailableColors] = useState<string[]>([]);
+  /** True once we know whether any active product has approved reviews. */
+  const [hasRatedProducts, setHasRatedProducts] = useState<boolean | null>(null);
   const [sortBy, setSortBy] = useState('popular');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [page, setPage] = useState(1);
@@ -58,8 +60,22 @@ function ShopContent() {
     const params = new URLSearchParams(searchParams.toString());
     params.delete(key);
     if (key === 'color') setSelectedColor('');
+    if (key === 'rating') setSelectedRating(0);
     const qs = params.toString();
     router.push(qs ? `/shop?${qs}` : '/shop');
+  }
+
+  function setRatingFilter(rating: number) {
+    const next = rating === selectedRating ? 0 : rating;
+    setSelectedRating(next);
+    setPage(1);
+    const params = new URLSearchParams(searchParams.toString());
+    if (next > 0) params.set('rating', String(next));
+    else params.delete('rating');
+    const qs = params.toString();
+    router.replace(qs ? `/shop?${qs}` : '/shop', { scroll: false });
+    // On mobile the filter drawer covers the grid — close it so shoppers see results.
+    setIsFilterOpen(false);
   }
 
   function clearAllFilters() {
@@ -88,12 +104,32 @@ function ShopContent() {
     const category = searchParams.get('category');
     const sort = searchParams.get('sort');
     const color = searchParams.get('color');
+    const ratingParam = parseInt(searchParams.get('rating') || '0', 10);
 
     setSelectedCategory(category || 'all');
     if (sort) setSortBy(sort);
     else if (![...searchParams.keys()].length) setSortBy('popular');
     setSelectedColor(color || '');
+    setSelectedRating([1, 2, 3, 4, 5].includes(ratingParam) ? ratingParam : 0);
   }, [searchParams]);
+
+  // Whether any product has real reviews (drives rating-filter availability)
+  useEffect(() => {
+    async function checkRated() {
+      const { count, error } = await supabase
+        .from('products')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'active')
+        .gt('review_count', 0);
+      if (error) {
+        console.error('Failed to check rated products:', error);
+        setHasRatedProducts(false);
+        return;
+      }
+      setHasRatedProducts((count || 0) > 0);
+    }
+    void checkRated();
+  }, []);
 
   // Distinct in-stock colours for the filter sidebar
   useEffect(() => {
@@ -203,9 +239,12 @@ function ShopContent() {
           query = query.gte('price', priceRange[0]).lte('price', priceRange[1]);
         }
 
-        // Rating Filter — only meaningful for products that actually have reviews
+        // Rating filter — products with approved reviews at/above the threshold.
+        // Unrated products (review_count = 0) are excluded on purpose.
         if (selectedRating > 0) {
-          query = query.gt('review_count', 0).gte('rating_avg', selectedRating);
+          query = query
+            .gt('review_count', 0)
+            .gte('rating_avg', selectedRating);
         }
 
         // Heel Height Filter (from URL params)
@@ -438,9 +477,10 @@ function ShopContent() {
               )}
               {selectedRating > 0 && (
                 <button
-                  onClick={() => { setSelectedRating(0); setPage(1); }}
+                  onClick={() => removeFilter('rating')}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gold-200 rounded-full text-sm font-medium text-gold-700 hover:bg-gold-100 transition-colors group"
                 >
+                  <i className="ri-star-fill text-amber-400 text-xs"></i>
                   {selectedRating}+ stars
                   <i className="ri-close-line text-gray-400 group-hover:text-gold-700 transition-colors"></i>
                 </button>
@@ -630,32 +670,49 @@ function ShopContent() {
 
                     {/* Rating */}
                     <div className="border-t border-gray-200 pt-8">
-                      <h3 className="font-semibold text-gray-900 mb-4">Rating</h3>
-                      <div className="space-y-2">
-                        {[4, 3, 2, 1].map(rating => (
-                          <button
-                            key={rating}
-                            onClick={() => {
-                              setSelectedRating(rating === selectedRating ? 0 : rating);
-                              setPage(1);
-                            }}
-                            className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${selectedRating === rating
-                              ? 'bg-gold-100 text-gold-700'
-                              : 'text-gray-700 hover:bg-gray-100'
-                              }`}
-                          >
-                            <div className="flex items-center space-x-2">
-                              {[1, 2, 3, 4, 5].map(star => (
-                                <i
-                                  key={star}
-                                  className={`${star <= rating ? 'ri-star-fill text-amber-400' : 'ri-star-line text-gray-300'} text-sm`}
-                                ></i>
-                              ))}
-                              <span className="text-sm">& Up</span>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
+                      <h3 className="font-semibold text-gray-900 mb-2">Rating</h3>
+                      {hasRatedProducts === false ? (
+                        <p className="text-sm text-gray-500 bg-gray-50 border border-gray-100 rounded-lg px-3 py-3">
+                          No customer reviews yet — rating filters will activate once products have approved reviews.
+                        </p>
+                      ) : (
+                        <>
+                          <p className="text-xs text-gray-500 mb-3">Based on approved customer reviews</p>
+                          <div className="space-y-2">
+                            {[4, 3, 2, 1].map((rating) => {
+                              const active = selectedRating === rating;
+                              return (
+                                <button
+                                  key={rating}
+                                  type="button"
+                                  onClick={() => setRatingFilter(rating)}
+                                  aria-pressed={active}
+                                  className={`w-full text-left px-4 py-3 rounded-lg border transition-colors ${
+                                    active
+                                      ? 'bg-gold-100 border-gold-300 text-gold-800 font-semibold'
+                                      : 'border-transparent text-gray-700 hover:bg-gray-100'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center space-x-2">
+                                      {[1, 2, 3, 4, 5].map((star) => (
+                                        <i
+                                          key={star}
+                                          className={`pointer-events-none ${star <= rating ? 'ri-star-fill text-amber-400' : 'ri-star-line text-gray-300'} text-sm`}
+                                        ></i>
+                                      ))}
+                                      <span className="text-sm pointer-events-none">& Up</span>
+                                    </div>
+                                    {active && (
+                                      <i className="ri-check-line text-gold-700 pointer-events-none"></i>
+                                    )}
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </>
+                      )}
                     </div>
 
                     {hasActiveFilters && (
@@ -735,11 +792,15 @@ function ShopContent() {
                       </div>
                       <h3 className="text-2xl font-bold text-gray-900 mb-2">No Products Found</h3>
                       <p className="text-gray-600 mb-8">
-                        {(sortBy === 'new' || sortBy === 'newest')
-                          ? 'No products are marked as New Arrivals yet. Mark items in the admin product editor to show them here.'
-                          : sortBy === 'rating'
-                            ? 'No rated products yet. Highest Rated only shows products with customer reviews.'
-                            : 'Try adjusting your filters to find what you\'re looking for'}
+                        {selectedRating > 0
+                          ? hasRatedProducts === false
+                            ? 'No products have customer reviews yet, so rating filters have nothing to match. Clear the rating filter or check back after reviews are approved.'
+                            : `No products match ${selectedRating}+ stars with your other filters. Try a lower rating or clear filters.`
+                          : (sortBy === 'new' || sortBy === 'newest')
+                            ? 'No products are marked as New Arrivals yet. Mark items in the admin product editor to show them here.'
+                            : sortBy === 'rating'
+                              ? 'No rated products yet. Highest Rated only shows products with customer reviews.'
+                              : 'Try adjusting your filters to find what you\'re looking for'}
                       </p>
                       <button
                         onClick={clearAllFilters}
