@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { useCMS } from '@/context/CMSContext';
-import { supabase } from '@/lib/supabase';
 
 export default function Footer() {
   const { getSetting } = useCMS();
@@ -22,15 +21,15 @@ export default function Footer() {
     setSubmitStatus('idle');
 
     try {
-      const { error } = await supabase
-        .from('newsletter_subscribers')
-        .insert({ email: cleaned, source: 'footer' });
-
-      // 23505 = already subscribed — treat as success so the visitor isn't
-      // told anything is wrong.
-      if (error && error.code !== '23505' && !/duplicate|unique/i.test(error.message || '')) {
-        throw error;
-      }
+      // Server route uses the admin DB client (bypasses PostgREST RLS/RETURNING
+      // quirks that broke anonymous footer sign-ups on plain Postgres).
+      const res = await fetch('/api/newsletter/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleaned, source: 'footer' }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.success) throw new Error(json?.error || 'Subscribe failed');
       setSubmitStatus('success');
       setEmail('');
     } catch (error) {

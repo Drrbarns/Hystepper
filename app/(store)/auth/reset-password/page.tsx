@@ -5,9 +5,47 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 
+const RECOVERY_TOKEN_KEY = 'hs-recovery-token';
+
+function readRecoveryParams() {
+  if (typeof window === 'undefined') return { token: '', type: '' };
+  const hash = window.location.hash.replace(/^#/, '');
+  const search = window.location.search.replace(/^\?/, '');
+  const hashParams = new URLSearchParams(hash);
+  const queryParams = new URLSearchParams(search);
+  const token =
+    hashParams.get('access_token') ||
+    hashParams.get('token') ||
+    queryParams.get('access_token') ||
+    queryParams.get('token') ||
+    '';
+  const type = hashParams.get('type') || queryParams.get('type') || '';
+  return { token, type };
+}
+
+function stashRecoveryToken(token: string) {
+  try {
+    sessionStorage.setItem(RECOVERY_TOKEN_KEY, token);
+  } catch { /* private mode */ }
+}
+
+function readStashedRecoveryToken(): string {
+  try {
+    return sessionStorage.getItem(RECOVERY_TOKEN_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+function clearStashedRecoveryToken() {
+  try {
+    sessionStorage.removeItem(RECOVERY_TOKEN_KEY);
+  } catch { /* ignore */ }
+}
+
 export default function ResetPasswordPage() {
   const router = useRouter();
-  const [hasRecoverySession, setHasRecoverySession] = useState<boolean | null>(null);
+  const [linkReady, setLinkReady] = useState<boolean | null>(null);
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -16,58 +54,24 @@ export default function ResetPasswordPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  // The reset email links here as /auth/reset-password#access_token=<recovery
-  // token>&type=recovery. That token is a one-time recovery token — NOT a JWT —
-  // so it must be exchanged via /auth/v1/verify for a real session before the
-  // form can submit. (Relying on detectSessionInUrl fails: there is no
-  // refresh_token in the hash, so supabase-js discards it and getSession()
-  // stays empty, which used to make this page claim the link had expired.)
+  // Email links: /auth/reset-password#access_token=<token>&type=recovery
+  // We stash the raw recovery token and set the password via a dedicated API
+  // so a leftover login session can never force "current password required".
   useEffect(() => {
-    let cancelled = false;
-
-    const exchange = async () => {
-      const hash = typeof window !== 'undefined' ? window.location.hash.replace(/^#/, '') : '';
-      const params = new URLSearchParams(hash);
-      const token = params.get('access_token') || params.get('token') || '';
-      const type = params.get('type') || '';
-
-      // Already signed in (e.g. second visit after a successful exchange)?
-      const { data } = await supabase.auth.getSession();
-      if (data.session) {
-        if (!cancelled) setHasRecoverySession(true);
-        return;
-      }
-
-      if (token && type === 'recovery') {
-        const { data: verified, error: verifyError } = await supabase.auth.verifyOtp({
-          type: 'recovery',
-          token_hash: token,
-        });
-        if (!cancelled) {
-          if (!verifyError && verified?.session) {
-            // Remove the one-time token from the address bar.
-            window.history.replaceState(null, '', window.location.pathname);
-            setHasRecoverySession(true);
-          } else {
-            setHasRecoverySession(false);
-          }
-        }
-        return;
-      }
-
-      if (!cancelled) setHasRecoverySession(false);
-    };
-
-    exchange();
-    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') {
-        setHasRecoverySession(true);
-      }
-    });
-    return () => {
-      cancelled = true;
-      sub.subscription.unsubscribe();
-    };
+    const { token, type } = readRecoveryParams();
+    if (token && (type === 'recovery' || !type)) {
+      stashRecoveryToken(token);
+      window.history.replaceState(null, '', window.location.pathname);
+      setLinkReady(true);
+      // Best-effort: also mint a recovery session for other auth listeners.
+      void supabase.auth.verifyOtp({ type: 'recovery', token_hash: token }).catch(() => {});
+      return;
+    }
+    if (readStashedRecoveryToken()) {
+      setLinkReady(true);
+      return;
+    }
+    setLinkReady(false);
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -83,13 +87,34 @@ export default function ResetPasswordPage() {
       return;
     }
 
+    const token = readStashedRecoveryToken();
+    if (!token) {
+      setError('Reset link is missing or expired. Please request a new one.');
+      setLinkReady(false);
+      return;
+    }
+
     setIsLoading(true);
     try {
-      const { error: updateError } = await supabase.auth.updateUser({ password });
-      if (updateError) throw updateError;
+      const res = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password, token }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.error || 'Failed to update password.');
+      }
+
+      clearStashedRecoveryToken();
+      // Drop any leftover session so they sign in fresh with the new password.
+      try {
+        await supabase.auth.signOut({ scope: 'local' });
+      } catch { /* ignore */ }
+
       setSuccess(true);
       setTimeout(() => {
-        router.push('/account');
+        router.push('/auth/login');
         router.refresh();
       }, 1500);
     } catch (err: any) {
@@ -108,13 +133,24 @@ export default function ResetPasswordPage() {
             <i className="ri-checkbox-circle-line text-3xl text-emerald-700"></i>
           </div>
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Password updated</h1>
-          <p className="text-gray-600">Redirecting you to your account…</p>
+          <p className="text-gray-600">You can sign in with your new password.</p>
         </div>
       </main>
     );
   }
 
-  if (hasRecoverySession === false) {
+  if (linkReady === null) {
+    return (
+      <main className="min-h-screen bg-gray-50 flex items-center justify-center py-12 px-4 sm:px-6">
+        <div className="text-center text-gray-600">
+          <i className="ri-loader-4-line animate-spin text-3xl text-gold-600"></i>
+          <p className="mt-3 text-sm">Checking your reset link…</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (linkReady === false) {
     return (
       <main className="min-h-screen bg-gray-50 flex items-center justify-center py-12 px-4 sm:px-6">
         <div className="max-w-md w-full text-center bg-white rounded-xl shadow-sm p-8">
@@ -122,7 +158,9 @@ export default function ResetPasswordPage() {
             <i className="ri-error-warning-line text-3xl text-amber-700"></i>
           </div>
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Reset link invalid or expired</h1>
-          <p className="text-gray-600 mb-6">Please request a new password reset link to continue.</p>
+          <p className="text-gray-600 mb-6">
+            Password reset links expire after one hour. Request a new one — you will not need your old password.
+          </p>
           <Link
             href="/auth/forgot-password"
             className="inline-block bg-gold-600 hover:bg-gold-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
@@ -139,7 +177,9 @@ export default function ResetPasswordPage() {
       <div className="max-w-md w-full">
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-gray-900 mb-2">Set a new password</h1>
-          <p className="text-gray-600">Choose a strong password to secure your account</p>
+          <p className="text-gray-600">
+            Choose a strong password to secure your account. Your old password is not required.
+          </p>
         </div>
 
         <div className="bg-white rounded-xl shadow-sm p-8">

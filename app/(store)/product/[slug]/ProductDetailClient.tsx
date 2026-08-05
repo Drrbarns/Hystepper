@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import Image from 'next/image';
 import { productImageSrc, toStoragePath } from '@/lib/media-url';
 import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';

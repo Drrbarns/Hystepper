@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import { supabase, signOutFully } from '@/lib/supabase';
 import NotificationsBell from '@/components/admin/NotificationsBell';
 
 // Maps each admin URL prefix to the permission key that grants access.
@@ -134,15 +134,14 @@ export default function AdminLayout({
       // full access via the earlier "fallback to full dashboard" behaviour.
       if (!staffRow) {
         console.warn('[Admin] User has no staff record, signing out:', session.user.email);
-        await supabase.auth.signOut();
         document.cookie = 'admin_session=; path=/; max-age=0';
-        router.push('/admin/login?error=no_access');
+        await signOutFully('/admin/login?error=no_access');
         return;
       }
 
       if (!staffRow.is_active) {
-        await supabase.auth.signOut();
-        router.push('/admin/login?error=inactive');
+        document.cookie = 'admin_session=; path=/; max-age=0';
+        await signOutFully('/admin/login?error=inactive');
         return;
       }
 
@@ -190,9 +189,8 @@ export default function AdminLayout({
         const next = firstAllowedPath(perms, staffRow.role);
         if (next === '/admin/login') {
           // Staff with zero allowed pages — sign them out cleanly.
-          await supabase.auth.signOut();
           document.cookie = 'admin_session=; path=/; max-age=0';
-          router.replace('/admin/login?error=no_access');
+          await signOutFully('/admin/login?error=no_access');
           return;
         }
         router.replace(next);
@@ -262,8 +260,7 @@ export default function AdminLayout({
 
   const handleLogout = async () => {
     document.cookie = 'admin_session=; path=/; max-age=0';
-    await supabase.auth.signOut();
-    router.push('/admin/login');
+    await signOutFully('/admin/login');
   };
 
   const handleToggleMaintenance = async () => {

@@ -17,6 +17,7 @@ import {
   touchSignIn,
   updateUserMetadata,
   updateUserPassword,
+  userHasActiveRecovery,
   verifyAccessToken,
   verifyPassword,
 } from "@/server/auth";
@@ -107,8 +108,11 @@ async function handleToken(req: NextRequest) {
     const row = await findUserById(verified.sub);
     if (!row) return err("User not found", 401, "invalid_grant");
     const user = rowToUser(row);
-    const access = await mintAccessToken(user);
-    return json(await sessionPayload(user, access));
+    // Keep recovery privilege across refresh while the reset link is still valid;
+    // otherwise a mid-flow refresh would strip amr=recovery and demand the old password.
+    const recovery = userHasActiveRecovery(row);
+    const access = await mintAccessToken(user, recovery ? "1h" : "7d", recovery ? "recovery" : "password");
+    return json(await sessionPayload(user, access, recovery ? 3600 : 604800));
   }
 
   return err(`Unsupported grant_type: ${grant || body.grant_type}`, 400);
@@ -197,13 +201,14 @@ async function handleUser(req: NextRequest) {
       if (newPassword.length < 6) {
         return err("Password must be at least 6 characters", 422, "weak_password");
       }
-      // Sessions minted from a recovery link (amr method 'recovery') may set a
-      // new password directly — that's the whole point of the reset flow.
-      // Regular sessions must prove knowledge of the current password.
+      // Email reset flow: recovery JWT (amr=recovery) OR a still-valid
+      // recovery_token on the user may set a new password without the old one.
+      // Logged-in Account → Security changes still require current_password.
       const amrMethod = String(
         (verified.payload as any)?.amr?.[0]?.method || "password"
       );
-      if (amrMethod !== "recovery") {
+      const viaEmailReset = amrMethod === "recovery" || userHasActiveRecovery(row);
+      if (!viaEmailReset) {
         const current = String(body.current_password || "");
         if (!current) {
           return err("Current password is required to set a new password", 400, "reauthentication_needed");
@@ -293,7 +298,7 @@ async function handleVerify(req: NextRequest) {
     // Short-lived session flagged as 'recovery' so /auth/v1/user allows the
     // password change without asking for the (forgotten) current password.
     const access = await mintAccessToken(user, "1h", "recovery");
-    return json(await sessionPayload(user, access));
+    return json(await sessionPayload(user, access, 3600));
   }
   return err("Unsupported verify request");
 }
@@ -323,7 +328,9 @@ async function handleResend(req: NextRequest) {
 }
 
 async function handleLogout() {
-  return json({});
+  // GoTrue returns 204 with an empty body. supabase-js uses noResolveJson on
+  // this call; either 200 {} or 204 is fine, but 204 matches upstream.
+  return cors(new NextResponse(null, { status: 204 }));
 }
 
 export async function OPTIONS() {

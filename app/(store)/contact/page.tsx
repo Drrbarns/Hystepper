@@ -40,28 +40,22 @@ export default function ContactPage() {
     setSubmitStatus('idle');
 
     try {
-      // Store in the DB so admins can read it under Admin → Messages.
-      const { error } = await supabase
-        .from('contact_submissions')
-        .insert({
+      // Server route persists the message (admin DB client) and fans out the
+      // inbox notification — avoids PostgREST RLS/RETURNING failures on the
+      // public anon role that broke this form in production.
+      const res = await fetch('/api/contact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           name: formData.name.trim(),
           email: formData.email.trim(),
           phone: formData.phone.trim() || null,
           subject: formData.subject.trim(),
           message: formData.message.trim(),
-        });
-
-      if (error) throw error;
-
-      // Also email the store inbox so messages aren't missed.
-      fetch('/api/notifications', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'contact',
-          payload: formData
-        })
-      }).catch(err => console.error('Contact notification error:', err));
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.success) throw new Error(json?.error || 'Send failed');
 
       setSubmitStatus('success');
       setFormData({ name: '', email: '', phone: '', subject: '', message: '' });

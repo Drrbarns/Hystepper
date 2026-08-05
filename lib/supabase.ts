@@ -74,3 +74,51 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
         lock: async (_name, _acquireTimeout, fn) => await fn(),
     },
 });
+
+/** Wipe every supabase-js auth key from both storages (remember-me dual store). */
+export function clearAuthStorage() {
+    if (!isBrowser) return;
+    const purge = (store: Storage) => {
+        const keys: string[] = [];
+        for (let i = 0; i < store.length; i++) {
+            const k = store.key(i);
+            if (!k) continue;
+            // supabase-js keys look like sb-<ref>-auth-token (+ code-verifier, etc.)
+            if (k.startsWith('sb-') || k.includes('auth-token') || k.endsWith('-code-verifier')) {
+                keys.push(k);
+            }
+        }
+        keys.forEach((k) => {
+            try {
+                store.removeItem(k);
+            } catch { /* ignore */ }
+        });
+    };
+    try {
+        purge(localStorage);
+        purge(sessionStorage);
+    } catch { /* ignore */ }
+}
+
+/**
+ * Reliable sign-out for the custom auth proxy. Remote /logout failures must
+ * never leave the customer stuck signed in — always clear local session and
+ * hard-navigate so in-memory auth state is gone too.
+ */
+export async function signOutFully(redirectTo = '/auth/login') {
+    try {
+        // Prefer local scope; still attempts server revoke but we ignore failures.
+        // Cap wait so a hung /logout never leaves the button stuck.
+        await Promise.race([
+            supabase.auth.signOut({ scope: 'local' }),
+            new Promise<void>((resolve) => setTimeout(resolve, 2500)),
+        ]);
+    } catch (err) {
+        console.error('[auth] signOut error (continuing with local clear):', err);
+    } finally {
+        clearAuthStorage();
+        if (isBrowser) {
+            window.location.assign(redirectTo);
+        }
+    }
+}

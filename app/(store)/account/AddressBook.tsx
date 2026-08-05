@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
+import DeliveryAreaPicker from '@/components/DeliveryAreaPicker';
 
 interface Address {
   id: string;
@@ -190,9 +191,6 @@ export default function AddressBook() {
     }
   };
 
-  const accraZones = zones.filter(z => z.is_accra);
-  const otherZones = zones.filter(z => !z.is_accra);
-
   if (loading) {
     return (
       <div className="py-16 text-center">
@@ -262,27 +260,17 @@ export default function AddressBook() {
             </div>
             <div>
               <label className="block text-sm font-semibold text-gray-900 mb-2">Delivery Area *</label>
-              <select
+              <DeliveryAreaPicker
+                zones={zones}
                 value={form.zone}
-                onChange={e => setForm({ ...form, zone: e.target.value })}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gold-400 focus:border-transparent bg-white"
-              >
-                <option value="">Select your area…</option>
-                {accraZones.length > 0 && (
-                  <optgroup label="Greater Accra">
-                    {accraZones.map(z => (
-                      <option key={z.id} value={z.name}>{z.name}</option>
-                    ))}
-                  </optgroup>
-                )}
-                {otherZones.length > 0 && (
-                  <optgroup label="Other Regions">
-                    {otherZones.map(z => (
-                      <option key={z.id} value={z.name}>{z.name}</option>
-                    ))}
-                  </optgroup>
-                )}
-              </select>
+                onChange={(zone) => setForm({ ...form, zone })}
+                error={!!formError && !form.zone}
+                placeholder="Type to search your area…"
+                groupByRegion
+              />
+              <p className="mt-1.5 text-xs text-gray-500">
+                Start typing — e.g. &ldquo;Kwash&rdquo; — to find your area faster.
+              </p>
             </div>
             <div className="md:col-span-2">
               <label className="block text-sm font-semibold text-gray-900 mb-2">Street Address *</label>

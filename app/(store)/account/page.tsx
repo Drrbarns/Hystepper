@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import OrderHistory from './OrderHistory';
 import AddressBook from './AddressBook';
-import { supabase } from '@/lib/supabase';
+import { supabase, signOutFully } from '@/lib/supabase';
 
 function AccountContent() {
   const router = useRouter();
@@ -156,10 +156,13 @@ function AccountContent() {
     }
   };
 
+  const [signingOut, setSigningOut] = useState(false);
+
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    router.push('/auth/login');
-    router.refresh();
+    if (signingOut) return;
+    setSigningOut(true);
+    // Hard-clears storage + full page redirect (see signOutFully).
+    await signOutFully('/auth/login');
   };
 
   if (loading) {
@@ -187,11 +190,13 @@ function AccountContent() {
               </div>
             </div>
             <button
+              type="button"
               onClick={handleSignOut}
-              className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 hover:text-red-600 hover:border-red-200 transition-all font-medium shadow-sm w-full md:w-auto justify-center md:justify-start"
+              disabled={signingOut}
+              className="flex items-center gap-2 px-5 py-2.5 bg-white border border-red-200 text-red-600 rounded-xl hover:bg-red-50 hover:border-red-300 transition-all font-medium shadow-sm w-full md:w-auto justify-center md:justify-start disabled:opacity-60"
             >
-              <i className="ri-logout-box-r-line"></i>
-              Sign Out
+              <i className={`ri-logout-box-r-line ${signingOut ? 'animate-pulse' : ''}`}></i>
+              {signingOut ? 'Signing out…' : 'Sign Out'}
             </button>
           </div>
 

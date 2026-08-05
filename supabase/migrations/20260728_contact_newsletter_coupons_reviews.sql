@@ -70,12 +70,17 @@ ALTER TABLE public.newsletter_subscribers ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Anyone can subscribe to the newsletter" ON public.newsletter_subscribers;
 CREATE POLICY "Anyone can subscribe to the newsletter" ON public.newsletter_subscribers
-  FOR INSERT
-  WITH CHECK (email ~* '^[^@\s]+@[^@\s]+\.[^@\s]+$');
+  FOR INSERT TO anon, authenticated
+  WITH CHECK (
+    -- Use [[:space:]] not \s — inside [] Postgres treats \s as the letter "s",
+    -- which rejected every email containing "s" (e.g. gmail addresses).
+    email ~* '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$'
+    AND length(btrim(email)) BETWEEN 3 AND 200
+  );
 
 DROP POLICY IF EXISTS "Staff manage newsletter subscribers" ON public.newsletter_subscribers;
 CREATE POLICY "Staff manage newsletter subscribers" ON public.newsletter_subscribers
-  FOR ALL
+  FOR ALL TO authenticated
   USING (is_admin_or_staff())
   WITH CHECK (is_admin_or_staff());
 

@@ -403,17 +403,26 @@ export async function findUserByRecoveryToken(token: string) {
   return rows[0] || null;
 }
 
+/** True while a forgot-password email is still valid for this user. */
+export function userHasActiveRecovery(row: { recovery_token?: string | null; recovery_sent_at?: string | Date | null }) {
+  if (!row?.recovery_token) return false;
+  if (!row.recovery_sent_at) return false;
+  const sent = new Date(row.recovery_sent_at).getTime();
+  if (Number.isNaN(sent)) return false;
+  return Date.now() - sent < 60 * 60 * 1000;
+}
+
 export async function touchSignIn(userId: string) {
   await query(`UPDATE auth.users SET last_sign_in_at = now(), updated_at = now() WHERE id = $1`, [userId]);
 }
 
-export async function sessionPayload(user: AppUser, accessToken: string) {
+export async function sessionPayload(user: AppUser, accessToken: string, expiresInSeconds = 604800) {
   const refresh = await mintRefreshToken(user);
   return {
     access_token: accessToken,
     token_type: "bearer",
-    expires_in: 604800,
-    expires_at: Math.floor(Date.now() / 1000) + 604800,
+    expires_in: expiresInSeconds,
+    expires_at: Math.floor(Date.now() / 1000) + expiresInSeconds,
     refresh_token: refresh,
     user: {
       id: user.id,

@@ -8,6 +8,7 @@ import OrderSummary from '@/components/OrderSummary';
 import { useCart } from '@/context/CartContext';
 import { useCMS } from '@/context/CMSContext';
 import { supabase } from '@/lib/supabase';
+import DeliveryAreaPicker from '@/components/DeliveryAreaPicker';
 import {
   DEFAULT_PROMOTIONS,
   applyDeliveryFeeAdjustments,
@@ -86,24 +87,6 @@ export default function CheckoutPage() {
   const applyingAddressRef = useRef(false);
   const [accraZones, setAccraZones] = useState<any[]>([]);
   const [outsideZones, setOutsideZones] = useState<any[]>([]);
-
-  const [areaSearch, setAreaSearch] = useState('');
-  const [showAreaDropdown, setShowAreaDropdown] = useState(false);
-  const areaDropdownRef = useRef<HTMLDivElement>(null);
-
-  const filteredAccraZones = accraZones.filter(z =>
-    z.name.toLowerCase().includes(areaSearch.toLowerCase())
-  );
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (areaDropdownRef.current && !areaDropdownRef.current.contains(e.target as Node)) {
-        setShowAreaDropdown(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   const [paymentOption, setPaymentOption] = useState<'full_payment' | 'item_only'>('full_payment');
   const [deliveryNotes, setDeliveryNotes] = useState('');
@@ -1219,146 +1202,89 @@ export default function CheckoutPage() {
                 </div>
 
                 {selectedRegionType === 'greater_accra' && (
-                  <div ref={areaDropdownRef} data-shipping-error={errors.region && selectedRegionType === 'greater_accra' ? 'true' : undefined} className="relative scroll-mt-24">
+                  <div data-shipping-error={errors.region && selectedRegionType === 'greater_accra' ? 'true' : undefined} className="relative scroll-mt-24">
                     <label className="block text-sm font-semibold text-gray-900 mb-1.5">Delivery Area *</label>
-                    <div
-                      className={`relative w-full border-2 rounded-lg overflow-hidden transition-colors ${errors.region ? 'border-red-500' : showAreaDropdown ? 'border-gold-400 ring-2 ring-gold-300' : 'border-gray-300'}`}
-                    >
-                      <div className="flex items-center">
-                        <i className="ri-search-line text-gray-400 ml-3"></i>
-                        <input
-                          type="text"
-                          value={(() => {
-                            if (!shippingData.region) return areaSearch;
-                            const z = accraZones.find(zone => zone.name === shippingData.region);
-                            if (!z) return shippingData.region;
-                            const p = previewZoneFee(z);
-                            if (p.isFree) return `${z.name} — FREE`;
-                            if (p.discounted) return `${z.name} — GH₵${p.final.toFixed(0)} (was GH₵${p.raw.toFixed(0)})`;
-                            return `${z.name} — GH₵${p.final.toFixed(0)}`;
-                          })()}
-                          onChange={(e) => {
-                            setAreaSearch(e.target.value);
-                            setShippingData({ ...shippingData, region: '' });
-                            setShowAreaDropdown(true);
-                            setErrors((prev: any) => ({ ...prev, region: '' }));
-                          }}
-                          onFocus={() => {
-                            if (shippingData.region) {
-                              setAreaSearch('');
-                              setShippingData({ ...shippingData, region: '' });
-                            }
-                            setShowAreaDropdown(true);
-                          }}
-                          className="w-full px-3 py-3 bg-white focus:outline-none"
-                          placeholder="Type to search your area..."
-                        />
-                        {shippingData.region && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setShippingData({ ...shippingData, region: '' });
-                              setAreaSearch('');
-                              setShowAreaDropdown(true);
-                            }}
-                            className="mr-3 text-gray-400 hover:text-gray-600 cursor-pointer"
-                          >
-                            <i className="ri-close-line text-lg"></i>
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {showAreaDropdown && !shippingData.region && (
-                      <div className="absolute z-50 w-full mt-1 bg-white border-2 border-gray-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
-                        {filteredAccraZones.length === 0 ? (
-                          <div className="px-4 py-3 text-sm text-gray-500 text-center">
-                            No areas match &ldquo;{areaSearch}&rdquo;
-                          </div>
-                        ) : (
-                          filteredAccraZones.map(z => {
-                            const p = previewZoneFee(z);
-                            return (
-                              <button
-                                key={z.id}
-                                type="button"
-                                onClick={() => {
-                                  setShippingData({ ...shippingData, region: z.name });
-                                  setAreaSearch('');
-                                  setShowAreaDropdown(false);
-                                  setErrors((prev: any) => ({ ...prev, region: '' }));
-                                }}
-                                className="w-full text-left px-4 py-2.5 hover:bg-gold-50 transition-colors flex items-center justify-between gap-3 cursor-pointer"
-                              >
-                                <span className="text-gray-900 min-w-0 truncate">{z.name}</span>
-                                <span className="flex items-center gap-2 shrink-0">
-                                  {p.badge && (
-                                    <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
-                                      {p.badge}
-                                    </span>
-                                  )}
-                                  {p.discounted && !p.isFree && (
-                                    <span className="text-xs text-gray-400 line-through">
-                                      GH₵{p.raw.toFixed(0)}
-                                    </span>
-                                  )}
-                                  <span className={`text-sm font-semibold ${p.isFree || p.discounted ? 'text-emerald-700' : 'text-gold-700'}`}>
-                                    {p.isFree ? 'FREE' : `${p.isFrom ? 'from ' : ''}GH₵${p.final.toFixed(0)}`}
-                                  </span>
-                                </span>
-                              </button>
-                            );
-                          })
-                        )}
-                      </div>
-                    )}
+                    <DeliveryAreaPicker
+                      zones={accraZones}
+                      value={shippingData.region}
+                      groupByRegion={false}
+                      error={!!errors.region}
+                      placeholder="Type to search your area…"
+                      onChange={(name) => {
+                        setShippingData({ ...shippingData, region: name });
+                        setErrors((prev: any) => ({ ...prev, region: '' }));
+                      }}
+                      formatSelected={(z) => {
+                        const p = previewZoneFee(z);
+                        if (p.isFree) return `${z.name} — FREE`;
+                        if (p.discounted) return `${z.name} — GH₵${p.final.toFixed(0)} (was GH₵${p.raw.toFixed(0)})`;
+                        return `${z.name} — GH₵${p.final.toFixed(0)}`;
+                      }}
+                      renderOptionRight={(z) => {
+                        const p = previewZoneFee(z);
+                        return (
+                          <span className="flex items-center gap-2 shrink-0">
+                            {p.badge && (
+                              <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
+                                {p.badge}
+                              </span>
+                            )}
+                            {p.discounted && !p.isFree && (
+                              <span className="text-xs text-gray-400 line-through">
+                                GH₵{p.raw.toFixed(0)}
+                              </span>
+                            )}
+                            <span className={`text-sm font-semibold ${p.isFree || p.discounted ? 'text-emerald-700' : 'text-gold-700'}`}>
+                              {p.isFree ? 'FREE' : `${p.isFrom ? 'from ' : ''}GH₵${p.final.toFixed(0)}`}
+                            </span>
+                          </span>
+                        );
+                      }}
+                    />
                     {errors.region && <p className="text-sm text-red-600 mt-1">{errors.region}</p>}
                   </div>
                 )}
 
                 {selectedRegionType === 'other_regions' && (
-                  <div data-shipping-error={errors.region && selectedRegionType === 'other_regions' ? 'true' : undefined} className="scroll-mt-24">
+                  <div data-shipping-error={errors.region && selectedRegionType === 'other_regions' ? 'true' : undefined} className="relative scroll-mt-24">
                     <label className="block text-sm font-semibold text-gray-900 mb-1.5">City *</label>
-                    <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                      {outsideZones.map(z => {
+                    <DeliveryAreaPicker
+                      zones={outsideZones}
+                      value={shippingData.region}
+                      groupByRegion={false}
+                      error={!!errors.region}
+                      placeholder="Type to search your city…"
+                      onChange={(name) => {
+                        setShippingData({ ...shippingData, region: name });
+                        setErrors((prev: any) => ({ ...prev, region: '' }));
+                      }}
+                      formatSelected={(z) => {
                         const p = previewZoneFee(z);
-                        const selected = shippingData.region === z.name;
+                        if (p.isFree) return `${z.name} — FREE`;
+                        if (p.discounted) return `${z.name} — GH₵${p.final.toFixed(0)} (was GH₵${p.raw.toFixed(0)})`;
+                        return `${z.name} — GH₵${p.final.toFixed(0)}`;
+                      }}
+                      renderOptionRight={(z) => {
+                        const p = previewZoneFee(z);
                         return (
-                          <button
-                            key={z.id}
-                            type="button"
-                            onClick={() => {
-                              setShippingData({ ...shippingData, region: z.name });
-                              setErrors((prev: any) => ({ ...prev, region: '' }));
-                            }}
-                            className={`w-full text-left px-4 py-3 border-2 rounded-lg transition-colors flex items-center justify-between gap-3 cursor-pointer ${
-                              selected
-                                ? 'border-gold-500 bg-gold-50'
-                                : errors.region
-                                  ? 'border-red-300 hover:border-red-400'
-                                  : 'border-gray-200 hover:border-gray-300'
-                            }`}
-                          >
-                            <span className="font-medium text-gray-900 min-w-0 truncate">{z.name}</span>
-                            <span className="flex items-center gap-2 shrink-0">
-                              {p.badge && (
-                                <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
-                                  {p.badge}
-                                </span>
-                              )}
-                              {p.discounted && !p.isFree && (
-                                <span className="text-xs text-gray-400 line-through">
-                                  GH₵{p.raw.toFixed(0)}
-                                </span>
-                              )}
-                              <span className={`text-sm font-semibold ${p.isFree || p.discounted ? 'text-emerald-700' : 'text-gray-900'}`}>
-                                {p.isFree ? 'FREE' : `${p.isFrom ? 'from ' : ''}GH₵${p.final.toFixed(0)}`}
+                          <span className="flex items-center gap-2 shrink-0">
+                            {p.badge && (
+                              <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
+                                {p.badge}
                               </span>
+                            )}
+                            {p.discounted && !p.isFree && (
+                              <span className="text-xs text-gray-400 line-through">
+                                GH₵{p.raw.toFixed(0)}
+                              </span>
+                            )}
+                            <span className={`text-sm font-semibold ${p.isFree || p.discounted ? 'text-emerald-700' : 'text-gray-900'}`}>
+                              {p.isFree ? 'FREE' : `${p.isFrom ? 'from ' : ''}GH₵${p.final.toFixed(0)}`}
                             </span>
-                          </button>
+                          </span>
                         );
-                      })}
-                    </div>
+                      }}
+                    />
                     {errors.region && <p className="text-sm text-red-600 mt-2">{errors.region}</p>}
                   </div>
                 )}
