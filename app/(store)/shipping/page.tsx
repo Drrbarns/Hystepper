@@ -66,7 +66,7 @@ export default function ShippingPage() {
                 <div>
                   <h3 className="text-xl font-bold text-gray-900 mb-2">Order Processing</h3>
                   <p className="text-gray-600 leading-relaxed">
-                    Orders placed before 2pm are typically processed the same day. We verify your items and pack them securely.
+                    Orders placed before 10am are typically processed the same day. We verify your items and pack them securely.
                   </p>
                 </div>
               </div>
@@ -90,7 +90,7 @@ export default function ShippingPage() {
                 <div>
                   <h3 className="text-xl font-bold text-gray-900 mb-2">Delivery</h3>
                   <p className="text-gray-600 leading-relaxed">
-                    Our rider or courier partner will contact you to coordinate the drop-off. Please ensure your phone line is active.
+                    Our rider or courier partner will contact you to coordinate the drop-off. Please ensure your phone line is active. We do not deliver on Sundays.
                   </p>
                 </div>
               </div>
@@ -122,6 +122,13 @@ export default function ShippingPage() {
                 <h3 className="font-bold text-gray-900 mb-2 text-lg">Failed Deliveries</h3>
                 <p className="text-gray-600 text-sm leading-relaxed">
                   Our riders will attempt to contact you upon arrival. If you are unavailable, we may need to reschedule, which could incur an additional fee.
+                </p>
+              </div>
+
+              <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm">
+                <h3 className="font-bold text-gray-900 mb-2 text-lg">Delivery Days</h3>
+                <p className="text-gray-600 text-sm leading-relaxed">
+                  Deliveries run Monday–Saturday. There are no deliveries on Sundays.
                 </p>
               </div>
             </div>

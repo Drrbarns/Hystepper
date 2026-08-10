@@ -34,6 +34,18 @@ export default function SignupPage() {
 
   const authBase = () => (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/$/, '');
 
+  // e.g. /auth/signup?redirect=/checkout — after verify, land back there signed in.
+  const postSignupPath = () => {
+    if (typeof window === 'undefined') return '/account';
+    const target = new URLSearchParams(window.location.search).get('redirect') || '';
+    return target.startsWith('/') && !target.startsWith('//') ? target : '/account';
+  };
+
+  const fromCheckout = () => {
+    if (typeof window === 'undefined') return false;
+    return (new URLSearchParams(window.location.search).get('redirect') || '').startsWith('/checkout');
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
@@ -76,7 +88,7 @@ export default function SignupPage() {
         email: formData.email,
         password: formData.password,
         options: {
-          emailRedirectTo: `${window.location.origin}/account`,
+          emailRedirectTo: `${window.location.origin}${postSignupPath()}`,
           data: {
             first_name: formData.firstName,
             last_name: formData.lastName,
@@ -107,7 +119,7 @@ export default function SignupPage() {
           }),
         }).catch(err => console.error('Welcome notification error:', err));
 
-        router.push('/account');
+        router.push(postSignupPath());
         router.refresh();
       }
     } catch (err: any) {
@@ -143,7 +155,7 @@ export default function SignupPage() {
             payload: { email: formData.email, firstName: formData.firstName, phone: formData.phone },
           }),
         }).catch(err => console.error('Welcome notification error:', err));
-        router.push('/account');
+        router.push(postSignupPath());
         router.refresh();
         return;
       }
@@ -183,7 +195,11 @@ export default function SignupPage() {
       <div className="max-w-md w-full">
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-gray-900 mb-2">Create Account</h1>
-          <p className="text-gray-600">Join us and start shopping today</p>
+          <p className="text-gray-600">
+            {fromCheckout()
+              ? 'Create your account, then we’ll bring you back to finish checkout'
+              : 'Join us and start shopping today'}
+          </p>
         </div>
 
         {awaitingOtp ? (
@@ -423,7 +439,10 @@ export default function SignupPage() {
 
           <p className="mt-8 text-center text-gray-600">
             Already have an account?{' '}
-            <Link href="/auth/login" className="text-gold-600 hover:text-gold-700 font-semibold whitespace-nowrap">
+            <Link
+              href={fromCheckout() ? '/auth/login?redirect=/checkout' : '/auth/login'}
+              className="text-gold-600 hover:text-gold-700 font-semibold whitespace-nowrap"
+            >
               Sign in
             </Link>
           </p>

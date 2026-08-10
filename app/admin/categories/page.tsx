@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import AdminTableScroll from '@/components/admin/AdminTableScroll';
 
 export default function AdminCategoriesPage() {
   const [showAddModal, setShowAddModal] = useState(false);
@@ -232,8 +233,8 @@ export default function AdminCategoriesPage() {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-        <div className="overflow-x-auto">
-          <table className="w-full">
+        <AdminTableScroll>
+          <table className="w-full min-w-[42rem]">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="text-left py-4 px-4 text-sm font-semibold text-gray-700">Order</th>
@@ -328,7 +329,7 @@ export default function AdminCategoriesPage() {
               )}
             </tbody>
           </table>
-        </div>
+        </AdminTableScroll>
       </div>
 
       {(showAddModal || showEditModal) && (

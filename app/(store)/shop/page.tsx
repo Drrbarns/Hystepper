@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import ProductCard from '@/components/ProductCard';
 import { supabase } from '@/lib/supabase';
 import PageHero from '@/components/PageHero';
+import { useBodyScrollLock } from '@/lib/use-body-scroll-lock';
 
 function ShopContent() {
   const searchParams = useSearchParams();
@@ -26,6 +27,7 @@ function ShopContent() {
   const [hasRatedProducts, setHasRatedProducts] = useState<boolean | null>(null);
   const [sortBy, setSortBy] = useState('popular');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  useBodyScrollLock(isFilterOpen);
   const [page, setPage] = useState(1);
   // 12 keeps every row full on both the 2-column (mobile) and 3-column
   // (desktop) grids — 12 is divisible by 2 and 3, so there are never orphan
@@ -531,20 +533,29 @@ function ShopContent() {
       <section className="py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="flex gap-8">
-            <aside className={`${isFilterOpen ? 'fixed inset-0 z-50 bg-white overflow-y-auto' : 'hidden'} lg:block lg:w-64 lg:flex-shrink-0`}>
-              <div className="lg:sticky lg:top-24">
-                <div className="bg-white lg:bg-transparent p-6 lg:p-0">
-                  <div className="flex items-center justify-between mb-6 lg:hidden">
-                    <h2 className="text-xl font-bold text-gray-900">Filters</h2>
-                    <button
-                      onClick={() => setIsFilterOpen(false)}
-                      className="w-10 h-10 flex items-center justify-center text-gray-700"
-                    >
-                      <i className="ri-close-line text-2xl"></i>
-                    </button>
-                  </div>
+            {/* Mobile: one full-screen scrollport (z above bottom nav / WhatsApp).
+                Nested max-h colour scroll was trapping touch so the drawer felt stuck. */}
+            <aside
+              className={`${
+                isFilterOpen
+                  ? 'fixed inset-0 z-[60] bg-white flex flex-col'
+                  : 'hidden'
+              } lg:flex lg:relative lg:inset-auto lg:z-auto lg:w-64 lg:flex-shrink-0 lg:flex-col`}
+            >
+              <div className="lg:sticky lg:top-24 flex flex-col min-h-0 flex-1 lg:flex-none lg:max-h-none">
+                <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0 lg:hidden">
+                  <h2 className="text-xl font-bold text-gray-900">Filters</h2>
+                  <button
+                    type="button"
+                    onClick={() => setIsFilterOpen(false)}
+                    className="w-10 h-10 flex items-center justify-center text-gray-700"
+                    aria-label="Close filters"
+                  >
+                    <i className="ri-close-line text-2xl"></i>
+                  </button>
+                </div>
 
-                  <div className="space-y-8">
+                <div className="flex-1 overflow-y-auto overscroll-contain px-6 py-6 lg:overflow-visible lg:p-0 space-y-8">
                     {/* Categories */}
                     <div>
                       <h3 className="font-semibold text-gray-900 mb-4">Categories</h3>
@@ -637,7 +648,7 @@ function ShopContent() {
                     {availableColors.length > 0 && (
                       <div className="border-t border-gray-200 pt-8">
                         <h3 className="font-semibold text-gray-900 mb-4">Colour</h3>
-                        <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto pr-1">
+                        <div className="flex flex-wrap gap-2 lg:max-h-48 lg:overflow-y-auto lg:pr-1">
                           {availableColors.map((color) => {
                             const active = selectedColor.toLowerCase() === color.toLowerCase();
                             return (
@@ -715,25 +726,25 @@ function ShopContent() {
                       )}
                     </div>
 
-                    {hasActiveFilters && (
-                      <button
-                        type="button"
-                        onClick={clearAllFilters}
-                        className="w-full border-2 border-gray-300 text-gray-800 py-3 rounded-lg font-medium hover:bg-gray-50 transition-colors"
-                      >
-                        Clear All Filters
-                      </button>
-                    )}
-
-                    <button
-                      onClick={() => {
-                        setIsFilterOpen(false);
-                      }}
-                      className="w-full bg-gray-900 hover:bg-gold-600 text-white py-3 rounded-lg font-medium transition-colors whitespace-nowrap"
-                    >
-                      Show Results
-                    </button>
                   </div>
+
+                <div className="shrink-0 border-t border-gray-100 bg-white px-6 py-4 space-y-2 safe-area-bottom lg:border-0 lg:bg-transparent lg:px-0 lg:pt-8 lg:pb-0">
+                  {hasActiveFilters && (
+                    <button
+                      type="button"
+                      onClick={clearAllFilters}
+                      className="w-full border-2 border-gray-300 text-gray-800 py-3 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+                    >
+                      Clear All Filters
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setIsFilterOpen(false)}
+                    className="w-full bg-gray-900 hover:bg-gold-600 text-white py-3 rounded-lg font-medium transition-colors whitespace-nowrap lg:mt-0"
+                  >
+                    Show Results
+                  </button>
                 </div>
               </div>
             </aside>

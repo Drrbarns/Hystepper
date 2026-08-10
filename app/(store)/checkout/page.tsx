@@ -46,26 +46,6 @@ export default function CheckoutPage() {
   const [checkoutType, setCheckoutType] = useState<'guest' | 'account'>('guest');
   const [user, setUser] = useState<any>(null);
 
-  // "Create Account" during checkout: the customer sets a password, we sign
-  // them up with the shipping details, verify their phone via SMS OTP, and
-  // only then open the payment modal so the order is placed with a session
-  // (orders RLS only lets authenticated users attach a user_id).
-  const [accountData, setAccountData] = useState({ password: '', confirmPassword: '' });
-  const [showAccountPassword, setShowAccountPassword] = useState(false);
-  const [showAccountConfirm, setShowAccountConfirm] = useState(false);
-  const [accountError, setAccountError] = useState('');
-  const [signupPending, setSignupPending] = useState(false);
-  const [signupEmail, setSignupEmail] = useState('');
-  const [showOtpModal, setShowOtpModal] = useState(false);
-  const [otp, setOtp] = useState('');
-  const [otpBusy, setOtpBusy] = useState(false);
-  const [otpError, setOtpError] = useState('');
-  const [otpInfo, setOtpInfo] = useState('');
-  // Session user established mid-checkout (avoids stale `user` closures).
-  const verifiedUserRef = useRef<any>(null);
-
-  const authBase = () => (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/$/, '');
-
   const [shippingData, setShippingData] = useState({
     firstName: '',
     lastName: '',
@@ -154,7 +134,14 @@ export default function CheckoutPage() {
       if (session?.user) {
         setUser(session.user);
         setCheckoutType('account');
-        setShippingData(prev => ({ ...prev, email: session.user.email || '' }));
+        const meta = session.user.user_metadata || {};
+        setShippingData(prev => ({
+          ...prev,
+          email: session.user.email || prev.email,
+          firstName: meta.first_name || prev.firstName,
+          lastName: meta.last_name || prev.lastName,
+          phone: meta.phone || prev.phone,
+        }));
 
         const { data: pointsData } = await supabase
           .from('loyalty_points')
@@ -443,119 +430,6 @@ export default function CheckoutPage() {
     setCouponError('');
   };
 
-  const startAccountSignup = async () => {
-    setAccountError('');
-    setIsLoading(true);
-    try {
-      // Re-run signup if the customer changed their email since the last try.
-      if (!signupPending || signupEmail !== shippingData.email) {
-        const { data, error } = await supabase.auth.signUp({
-          email: shippingData.email,
-          password: accountData.password,
-          options: {
-            emailRedirectTo: `${window.location.origin}/account`,
-            data: {
-              first_name: shippingData.firstName,
-              last_name: shippingData.lastName,
-              phone: shippingData.phone,
-            },
-          },
-        });
-        if (error) throw error;
-
-        if (data.session && data.user?.email_confirmed_at) {
-          // No verification needed — straight to payment with a session.
-          verifiedUserRef.current = data.session.user;
-          setUser(data.session.user);
-          setShowPaymentModal(true);
-          return;
-        }
-        setSignupPending(true);
-        setSignupEmail(shippingData.email);
-      }
-
-      setOtp('');
-      setOtpError('');
-      setOtpInfo(
-        `We sent a 6-digit code to ${shippingData.phone}. Enter it below to activate your account, then continue to payment.`
-      );
-      setShowOtpModal(true);
-    } catch (err: any) {
-      const msg = String(err?.message || '');
-      const code = String(err?.code || err?.error || '');
-      if (code === 'user_already_exists' || /already (registered|exists|been registered)/i.test(msg)) {
-        setAccountError('An account with this email already exists. Sign in below, or switch to Guest Checkout.');
-      } else {
-        setAccountError(msg || 'Could not create your account right now. You can still continue as a guest.');
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const verifyCheckoutOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setOtpError('');
-    const cleaned = otp.replace(/\D/g, '');
-    if (!/^\d{6}$/.test(cleaned)) {
-      setOtpError('Enter the 6-digit code from your SMS.');
-      return;
-    }
-    setOtpBusy(true);
-    try {
-      const { data, error } = await supabase.auth.verifyOtp({
-        email: shippingData.email,
-        token: cleaned,
-        type: 'signup',
-      });
-      if (error) throw error;
-      if (!data.session) {
-        throw new Error('Verification succeeded but no session was created. Please sign in and try again.');
-      }
-
-      verifiedUserRef.current = data.session.user;
-      setUser(data.session.user);
-      setShowOtpModal(false);
-      toast.success('Account created and verified! Choose how to pay.');
-
-      fetch('/api/notifications', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'welcome',
-          payload: { email: shippingData.email, firstName: shippingData.firstName, phone: shippingData.phone },
-        }),
-      }).catch(err => console.error('Welcome notification error:', err));
-
-      setShowPaymentModal(true);
-    } catch (err: any) {
-      setOtpError(err?.message || 'Invalid or expired code. Try again or resend.');
-    } finally {
-      setOtpBusy(false);
-    }
-  };
-
-  const resendCheckoutOtp = async () => {
-    setOtpError('');
-    try {
-      const res = await fetch(`${authBase()}/auth/v1/resend`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
-        },
-        body: JSON.stringify({ email: shippingData.email, type: 'sms' }),
-      });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(payload.message || payload.error_description || 'Could not resend code');
-      }
-      setOtpInfo('A new SMS code was sent. Enter it below to continue.');
-    } catch (err: any) {
-      setOtpError(err?.message || 'Could not resend right now. Please try again in a moment.');
-    }
-  };
-
   const applySavedAddress = (a: any) => {
     const parts = String(a.full_name || '').trim().split(/\s+/);
     const firstName = parts.shift() || '';
@@ -573,8 +447,6 @@ export default function CheckoutPage() {
       city: a.city || '',
       region: zone ? zone.name : '',
     }));
-    setAreaSearch('');
-    setShowAreaDropdown(false);
     setSelectedAddressId(a.id);
     setErrors((prev: any) => ({
       ...prev, firstName: '', lastName: '', phone: '', address: '', city: '', region: '',
@@ -589,27 +461,7 @@ export default function CheckoutPage() {
     const policyMissing = !acceptedPolicy;
     if (policyMissing) setPolicyError(true);
 
-    // Creating an account needs a real email + a valid password before we
-    // can sign the customer up.
-    const accountErrors: any = {};
-    if (checkoutType === 'account' && !user && !verifiedUserRef.current) {
-      if (!shippingData.email || !/\S+@\S+\.\S+/.test(shippingData.email)) {
-        accountErrors.email = 'Email is required to create an account';
-      }
-      if (!accountData.password) {
-        accountErrors.accountPassword = 'Password is required';
-      } else if (accountData.password.length < 6) {
-        accountErrors.accountPassword = 'Password must be at least 6 characters';
-      }
-      if (accountData.password !== accountData.confirmPassword) {
-        accountErrors.accountConfirm = 'Passwords do not match';
-      }
-      if (Object.keys(accountErrors).length > 0) {
-        setErrors((prev: any) => ({ ...prev, ...accountErrors }));
-      }
-    }
-
-    if (!shippingOk || policyMissing || Object.keys(accountErrors).length > 0) {
+    if (!shippingOk || policyMissing) {
       // Surface a top-of-form summary so the customer knows what to fix
       // without having to spot the red borders themselves.
       setShowValidationBanner(true);
@@ -636,14 +488,6 @@ export default function CheckoutPage() {
     }
 
     setShowValidationBanner(false);
-
-    // New account requested: sign up + verify phone first; the payment modal
-    // opens automatically once the OTP is confirmed.
-    if (checkoutType === 'account' && !user && !verifiedUserRef.current) {
-      void startAccountSignup();
-      return;
-    }
-
     setShowPaymentModal(true);
   };
 
@@ -651,9 +495,7 @@ export default function CheckoutPage() {
     setIsLoading(true);
     setShowPaymentModal(false);
 
-    // A session created mid-checkout (Create Account flow) may not have
-    // propagated into the `user` state closure yet — prefer the ref.
-    const authedUser = user || verifiedUserRef.current;
+    const authedUser = user;
 
     try {
       // Last-chance stock check: between the customer opening the payment
@@ -948,6 +790,7 @@ export default function CheckoutPage() {
           <h2 className="text-lg font-bold text-gray-900 mb-4">Checkout As</h2>
           <div className="grid md:grid-cols-2 gap-3">
             <button
+              type="button"
               onClick={() => !user && setCheckoutType('guest')}
               className={`p-4 rounded-xl border-2 transition-all text-left cursor-pointer ${checkoutType === 'guest'
                 ? 'border-gold-500 bg-gold-50'
@@ -966,106 +809,44 @@ export default function CheckoutPage() {
               {user && <p className="text-xs text-gold-600 mt-1">You are logged in</p>}
             </button>
 
-            <button
-              onClick={() => setCheckoutType('account')}
-              className={`p-4 rounded-xl border-2 transition-all text-left cursor-pointer ${checkoutType === 'account'
-                ? 'border-gold-500 bg-gold-50'
-                : 'border-gray-200 hover:border-gray-300'
-                }`}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <i className="ri-account-circle-line text-2xl text-gold-600"></i>
-                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${checkoutType === 'account' ? 'border-gold-500 bg-gold-500' : 'border-gray-300'}`}>
-                  {checkoutType === 'account' && <i className="ri-check-line text-white text-xs"></i>}
+            {user ? (
+              <div className="p-4 rounded-xl border-2 border-gold-500 bg-gold-50 text-left">
+                <div className="flex items-center justify-between mb-2">
+                  <i className="ri-account-circle-line text-2xl text-gold-600"></i>
+                  <div className="w-5 h-5 rounded-full border-2 border-gold-500 bg-gold-500 flex items-center justify-center">
+                    <i className="ri-check-line text-white text-xs"></i>
+                  </div>
                 </div>
+                <h3 className="font-bold text-gray-900 mb-1">My Account</h3>
+                <p className="text-xs text-gray-600">Logged in as {user.email}</p>
               </div>
-              <h3 className="font-bold text-gray-900 mb-1">{user ? 'My Account' : 'Create Account'}</h3>
-              <p className="text-xs text-gray-600">
-                {user ? `Logged in as ${user.email}` : 'Save info, track orders & earn loyalty points'}
-              </p>
-            </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => router.push('/auth/signup?redirect=/checkout')}
+                className="p-4 rounded-xl border-2 border-gray-200 hover:border-gold-400 hover:bg-gold-50 transition-all text-left cursor-pointer"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <i className="ri-account-circle-line text-2xl text-gold-600"></i>
+                  <i className="ri-arrow-right-line text-xl text-gray-400"></i>
+                </div>
+                <h3 className="font-bold text-gray-900 mb-1">Create Account</h3>
+                <p className="text-xs text-gray-600">
+                  Sign up, then come back here to finish shipping &amp; earn loyalty points
+                </p>
+              </button>
+            )}
           </div>
 
-          {checkoutType === 'account' && !user && (
-            <div className="mt-4 pt-4 border-t border-gray-100 space-y-4">
-              <div className="flex items-start justify-between flex-wrap gap-2">
-                <p className="text-sm text-gray-600">
-                  Set a password below — we&apos;ll create your account with your shipping details and text a
-                  6-digit code to your phone to verify it before payment.
-                </p>
-              </div>
-
-              <div className="rounded-lg bg-gold-50 border border-gold-200 px-4 py-3 flex items-center justify-between flex-wrap gap-2">
-                <p className="text-sm text-gray-700">Already have an account?</p>
-                <Link
-                  href="/auth/login?redirect=/checkout"
-                  className="text-sm font-bold text-gold-600 hover:text-gold-700 whitespace-nowrap"
-                >
-                  Sign in instead <i className="ri-arrow-right-line align-middle"></i>
-                </Link>
-              </div>
-
-              {accountError && (
-                <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3">
-                  <p className="text-sm text-red-700">{accountError}</p>
-                  <Link href="/auth/login?redirect=/checkout" className="text-sm font-semibold text-red-700 underline">
-                    Go to sign in
-                  </Link>
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div data-shipping-error={errors.accountPassword ? 'true' : undefined} className="scroll-mt-24">
-                  <label className="block text-sm font-semibold text-gray-900 mb-1.5">Password *</label>
-                  <div className="relative">
-                    <input
-                      type={showAccountPassword ? 'text' : 'password'}
-                      value={accountData.password}
-                      onChange={(e) => { setAccountData({ ...accountData, password: e.target.value }); setErrors((prev: any) => ({ ...prev, accountPassword: '' })); }}
-                      className={`w-full px-4 py-3 pr-12 border-2 rounded-lg focus:ring-2 focus:ring-gold-300 focus:border-gold-400 ${errors.accountPassword ? 'border-red-500' : 'border-gray-300'}`}
-                      placeholder="At least 6 characters"
-                      autoComplete="new-password"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowAccountPassword(!showAccountPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
-                      aria-label={showAccountPassword ? 'Hide password' : 'Show password'}
-                    >
-                      <i className={`${showAccountPassword ? 'ri-eye-off-line' : 'ri-eye-line'} text-xl`}></i>
-                    </button>
-                  </div>
-                  {errors.accountPassword && <p className="text-sm text-red-600 mt-1 flex items-center gap-1"><i className="ri-error-warning-line"></i>{errors.accountPassword}</p>}
-                </div>
-
-                <div data-shipping-error={errors.accountConfirm ? 'true' : undefined} className="scroll-mt-24">
-                  <label className="block text-sm font-semibold text-gray-900 mb-1.5">Confirm Password *</label>
-                  <div className="relative">
-                    <input
-                      type={showAccountConfirm ? 'text' : 'password'}
-                      value={accountData.confirmPassword}
-                      onChange={(e) => { setAccountData({ ...accountData, confirmPassword: e.target.value }); setErrors((prev: any) => ({ ...prev, accountConfirm: '' })); }}
-                      className={`w-full px-4 py-3 pr-12 border-2 rounded-lg focus:ring-2 focus:ring-gold-300 focus:border-gold-400 ${errors.accountConfirm ? 'border-red-500' : 'border-gray-300'}`}
-                      placeholder="Re-enter your password"
-                      autoComplete="new-password"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowAccountConfirm(!showAccountConfirm)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
-                      aria-label={showAccountConfirm ? 'Hide password' : 'Show password'}
-                    >
-                      <i className={`${showAccountConfirm ? 'ri-eye-off-line' : 'ri-eye-line'} text-xl`}></i>
-                    </button>
-                  </div>
-                  {errors.accountConfirm && <p className="text-sm text-red-600 mt-1 flex items-center gap-1"><i className="ri-error-warning-line"></i>{errors.accountConfirm}</p>}
-                </div>
-              </div>
-
-              <p className="text-xs text-gray-500 flex items-center gap-1">
-                <i className="ri-information-line"></i>
-                Email becomes required for account creation — fill it in under Shipping Information.
-              </p>
+          {!user && (
+            <div className="mt-4 pt-4 border-t border-gray-100 rounded-lg flex items-center justify-between flex-wrap gap-2">
+              <p className="text-sm text-gray-600">Already have an account?</p>
+              <Link
+                href="/auth/login?redirect=/checkout"
+                className="text-sm font-bold text-gold-600 hover:text-gold-700 whitespace-nowrap"
+              >
+                Sign in <i className="ri-arrow-right-line align-middle"></i>
+              </Link>
             </div>
           )}
         </div>
@@ -1155,8 +936,8 @@ export default function CheckoutPage() {
                 <div data-shipping-error={errors.email ? 'true' : undefined} className="scroll-mt-24">
                   <label className="block text-sm font-semibold text-gray-900 mb-1.5">
                     Email Address{' '}
-                    {checkoutType === 'account' && !user
-                      ? <span className="text-red-500 font-normal">* (required for your account)</span>
+                    {user
+                      ? <span className="text-gray-400 font-normal">(from your account)</span>
                       : <span className="text-gray-400 font-normal">(optional)</span>}
                   </label>
                   <input
@@ -1724,75 +1505,6 @@ export default function CheckoutPage() {
         </div>
       )}
 
-      {/* Create-account phone verification modal */}
-      {showOtpModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="p-6 text-center border-b border-gray-100">
-              <div className="w-14 h-14 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                <i className="ri-smartphone-line text-2xl text-emerald-600"></i>
-              </div>
-              <h3 className="text-xl font-bold text-gray-900">Verify Your Phone</h3>
-              <p className="text-sm text-gray-500 mt-1">{otpInfo}</p>
-            </div>
-
-            <form onSubmit={verifyCheckoutOtp} className="p-6 space-y-4">
-              {otpError && (
-                <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
-                  {otpError}
-                </div>
-              )}
-              <input
-                type="text"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={6}
-                value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-center text-2xl tracking-[0.5em] font-bold focus:ring-2 focus:ring-gold-300 focus:border-gold-400"
-                placeholder="000000"
-                autoFocus
-              />
-              <button
-                type="submit"
-                disabled={otpBusy || otp.length !== 6}
-                className="w-full py-3 bg-gray-900 text-white rounded-xl font-semibold hover:bg-gray-800 transition-colors disabled:opacity-50 cursor-pointer"
-              >
-                {otpBusy ? 'Verifying…' : 'Verify & Continue to Payment'}
-              </button>
-              <button
-                type="button"
-                onClick={() => resendCheckoutOtp()}
-                className="w-full py-2 text-sm font-semibold text-gold-600 hover:text-gold-700 cursor-pointer"
-              >
-                Resend SMS code
-              </button>
-            </form>
-
-            <div className="px-6 pb-6 space-y-2">
-              <button
-                type="button"
-                onClick={() => {
-                  // Never let account trouble block the purchase.
-                  setShowOtpModal(false);
-                  setCheckoutType('guest');
-                  setShowPaymentModal(true);
-                }}
-                className="w-full py-3 border-2 border-gray-200 rounded-xl text-gray-600 font-semibold hover:bg-gray-50 transition-colors cursor-pointer"
-              >
-                Continue as guest instead
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowOtpModal(false)}
-                className="w-full py-2 text-sm text-gray-400 hover:text-gray-600 cursor-pointer"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </main>
   );
 }

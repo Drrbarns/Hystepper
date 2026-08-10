@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import AdminTableScroll from '@/components/admin/AdminTableScroll';
 
 // NOTE: 'dashboard' is intentionally NOT a togglable permission. The dashboard
 // shows aggregate revenue/profit data and is reserved for super-admins only.
@@ -328,7 +329,8 @@ export default function StaffPage() {
             <p className="text-sm mt-1">Add your first staff member to get started.</p>
           </div>
         ) : (
-          <table className="w-full">
+          <AdminTableScroll>
+          <table className="w-full min-w-[36rem]">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                 <th className="px-5 py-3 text-left">Name / Email</th>
@@ -411,6 +413,7 @@ export default function StaffPage() {
               })}
             </tbody>
           </table>
+          </AdminTableScroll>
         )}
       </div>
 

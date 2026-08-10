@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import AdminTableScroll from '@/components/admin/AdminTableScroll';
 import { toast } from 'sonner';
 
 const EMPTY_FORM = {
@@ -188,8 +189,8 @@ export default function AdminCouponsPage() {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full">
+        <AdminTableScroll>
+          <table className="w-full min-w-[48rem]">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="text-left py-4 px-6 text-sm font-semibold text-gray-700">Code</th>
@@ -256,7 +257,7 @@ export default function AdminCouponsPage() {
               })}
             </tbody>
           </table>
-        </div>
+        </AdminTableScroll>
       </div>
 
       {showModal && (

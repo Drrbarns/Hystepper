@@ -102,7 +102,7 @@ export default function AdminMessagesPage() {
   };
 
   return (
-    <div className="p-6 lg:p-8 max-w-6xl mx-auto">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto min-w-0">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Messages</h1>
         <p className="text-sm text-gray-500 mt-1">
@@ -110,10 +110,10 @@ export default function AdminMessagesPage() {
         </p>
       </div>
 
-      <div className="flex gap-2 mb-6">
+      <div className="flex gap-2 mb-6 overflow-x-auto pb-1 -mx-1 px-1">
         <button
           onClick={() => setTab('contact')}
-          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors cursor-pointer ${tab === 'contact' ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+          className={`shrink-0 px-4 py-2 rounded-lg text-sm font-semibold transition-colors cursor-pointer ${tab === 'contact' ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
         >
           Contact Messages
           {newCount > 0 && (
@@ -122,7 +122,7 @@ export default function AdminMessagesPage() {
         </button>
         <button
           onClick={() => setTab('newsletter')}
-          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors cursor-pointer ${tab === 'newsletter' ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+          className={`shrink-0 px-4 py-2 rounded-lg text-sm font-semibold transition-colors cursor-pointer ${tab === 'newsletter' ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
         >
           Newsletter Subscribers ({activeSubscribers.length})
         </button>
@@ -194,13 +194,13 @@ export default function AdminMessagesPage() {
           ))}
         </div>
       ) : (
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="p-4 border-b border-gray-100 flex items-center justify-between flex-wrap gap-3">
+        <div className="bg-white rounded-xl shadow-sm overflow-hidden min-w-0">
+          <div className="p-4 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <p className="text-sm text-gray-600">
               To send an update: copy all emails and paste them into the <span className="font-semibold">BCC</span> field
               of your store email, or export a CSV for a mailing tool.
             </p>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <button
                 onClick={copyEmails}
                 disabled={activeSubscribers.length === 0}
@@ -223,27 +223,49 @@ export default function AdminMessagesPage() {
               No subscribers yet. Sign-ups from the “Stay in the Loop” form in the storefront footer will appear here.
             </div>
           ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-gray-500 uppercase border-b border-gray-100">
-                  <th className="p-4">Email</th>
-                  <th className="p-4">Source</th>
-                  <th className="p-4">Subscribed</th>
-                </tr>
-              </thead>
-              <tbody>
+            <>
+              {/* Mobile: stacked cards — no sideways swipe needed */}
+              <ul className="md:hidden divide-y divide-gray-100">
                 {subscribers.map(s => (
-                  <tr key={s.id} className="border-b border-gray-50 last:border-0">
-                    <td className="p-4 font-medium text-gray-900">
+                  <li key={s.id} className="p-4 space-y-1">
+                    <p className="font-medium text-gray-900 break-all">
                       {s.email}
                       {!s.is_active && <span className="ml-2 text-xs text-gray-400">(unsubscribed)</span>}
-                    </td>
-                    <td className="p-4 text-gray-500 capitalize">{s.source}</td>
-                    <td className="p-4 text-gray-500">{new Date(s.created_at).toLocaleDateString()}</td>
-                  </tr>
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      <span className="capitalize">{s.source}</span>
+                      <span className="mx-1.5 text-gray-300">·</span>
+                      {new Date(s.created_at).toLocaleDateString()}
+                    </p>
+                  </li>
                 ))}
-              </tbody>
-            </table>
+              </ul>
+
+              {/* Desktop / tablet: table with horizontal scroll if needed */}
+              <div className="hidden md:block overflow-x-auto overscroll-x-contain">
+                <table className="w-full min-w-[36rem] text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-gray-500 uppercase border-b border-gray-100">
+                      <th className="p-4">Email</th>
+                      <th className="p-4">Source</th>
+                      <th className="p-4 whitespace-nowrap">Subscribed</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {subscribers.map(s => (
+                      <tr key={s.id} className="border-b border-gray-50 last:border-0">
+                        <td className="p-4 font-medium text-gray-900 break-all">
+                          {s.email}
+                          {!s.is_active && <span className="ml-2 text-xs text-gray-400">(unsubscribed)</span>}
+                        </td>
+                        <td className="p-4 text-gray-500 capitalize whitespace-nowrap">{s.source}</td>
+                        <td className="p-4 text-gray-500 whitespace-nowrap">{new Date(s.created_at).toLocaleDateString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
       )}

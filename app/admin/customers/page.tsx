@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
+import AdminTableScroll from '@/components/admin/AdminTableScroll';
 
 export default function AdminCustomersPage() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -304,8 +305,8 @@ export default function AdminCustomersPage() {
           </div>
         )}
 
-        <div className="overflow-x-auto">
-          <table className="w-full">
+        <AdminTableScroll>
+          <table className="w-full min-w-[48rem]">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="py-4 px-6">
@@ -399,7 +400,7 @@ export default function AdminCustomersPage() {
               )}
             </tbody>
           </table>
-        </div>
+        </AdminTableScroll>
 
         <div className="p-6 border-t border-gray-200 flex items-center justify-between">
           <p className="text-gray-600">Showing {filteredCustomers.length} of {customers.length} customers</p>

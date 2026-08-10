@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
+import AdminTableScroll from '@/components/admin/AdminTableScroll';
 
 interface Rider {
   user_id: string;
@@ -253,8 +254,8 @@ export default function DeliveryPage() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          <AdminTableScroll>
+            <table className="w-full min-w-[54rem] text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   <th className="px-5 py-3">Order</th>
@@ -364,7 +365,7 @@ export default function DeliveryPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </AdminTableScroll>
         )}
         {filtered.length > 0 && (
           <div className="px-5 py-3 border-t border-gray-100 text-sm text-gray-500">

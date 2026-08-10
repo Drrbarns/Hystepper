@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
+import AdminTableScroll from '@/components/admin/AdminTableScroll';
 
 export default function InventoryManagementPage() {
   const router = useRouter();
@@ -414,8 +415,8 @@ export default function InventoryManagementPage() {
         </div>
 
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
+          <AdminTableScroll>
+            <table className="w-full min-w-[48rem]">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="px-6 py-4 text-left">
@@ -526,7 +527,7 @@ export default function InventoryManagementPage() {
                 )}
               </tbody>
             </table>
-          </div>
+          </AdminTableScroll>
         </div>
       </div>
       {showImportModal && (

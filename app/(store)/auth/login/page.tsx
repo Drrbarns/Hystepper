@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase, setRememberMe } from '@/lib/supabase';
 
@@ -21,6 +21,7 @@ export default function LoginPage() {
   const [needsPhoneVerify, setNeedsPhoneVerify] = useState(false);
   const [otp, setOtp] = useState('');
   const [otpInfo, setOtpInfo] = useState('');
+  const [signupHref, setSignupHref] = useState('/auth/signup');
 
   const authBase = () => (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/$/, '');
 
@@ -31,6 +32,14 @@ export default function LoginPage() {
     const target = new URLSearchParams(window.location.search).get('redirect') || '';
     return target.startsWith('/') && !target.startsWith('//') ? target : '/account';
   };
+
+  // Preserve checkout (etc.) redirect when switching to create-account from login.
+  useEffect(() => {
+    const target = new URLSearchParams(window.location.search).get('redirect') || '';
+    if (target.startsWith('/') && !target.startsWith('//')) {
+      setSignupHref(`/auth/signup?redirect=${encodeURIComponent(target)}`);
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -285,7 +294,7 @@ export default function LoginPage() {
 
               <p className="mt-8 text-center text-gray-600">
                 Don&apos;t have an account?{' '}
-                <Link href="/auth/signup" className="text-gold-600 hover:text-gold-700 font-semibold whitespace-nowrap">
+                <Link href={signupHref} className="text-gold-600 hover:text-gold-700 font-semibold whitespace-nowrap">
                   Create one now
                 </Link>
               </p>

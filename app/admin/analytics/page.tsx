@@ -13,6 +13,10 @@ export default function AnalyticsPage() {
   const [salesData, setSalesData] = useState<any[]>([]);
   const [categoryRevenue, setCategoryRevenue] = useState<any[]>([]);
   const [topProducts, setTopProducts] = useState<any[]>([]);
+  /** All products with units sold in the selected range (sorted by units desc). */
+  const [itemsBreakdown, setItemsBreakdown] = useState<
+    { name: string; units: number; revenue: number; share: number }[]
+  >([]);
   const [trackingConfigured, setTrackingConfigured] = useState(false);
 
   const [metrics, setMetrics] = useState({
@@ -22,6 +26,7 @@ export default function AnalyticsPage() {
     ordersGrowth: 0,
     aov: 0,
     aovGrowth: 0,
+    itemsSold: 0,
     conversion: 0,
     conversionGrowth: 0
   });
@@ -94,6 +99,10 @@ export default function AnalyticsPage() {
       const totalRevenue = orders?.reduce((sum, o) => sum + orderNet(o), 0) || 0;
       const totalOrders = orders?.length || 0;
       const aov = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+      const totalItemsSold = validItems.reduce(
+        (sum, it) => sum + (Number(it.quantity) || 0),
+        0,
+      );
 
       setMetrics({
         revenue: totalRevenue,
@@ -102,6 +111,7 @@ export default function AnalyticsPage() {
         ordersGrowth: 0,
         aov: aov,
         aovGrowth: 0,
+        itemsSold: totalItemsSold,
         conversion: 0, // No visitor data
         conversionGrowth: 0
       });
@@ -144,16 +154,27 @@ export default function AnalyticsPage() {
       const catArray = Object.values(catMap).map((c: any) => ({ name: c.name, value: c.value }));
       setCategoryRevenue(catArray);
 
-      // Process Top Products
-      const prodMap: Record<string, any> = {};
+      // Process product units + revenue (full breakdown + top by revenue)
+      const prodMap: Record<string, { name: string; revenue: number; units: number }> = {};
       validItems.forEach(item => {
         const pName = item.products?.name || item.product_name || 'Unknown';
         if (!prodMap[pName]) prodMap[pName] = { name: pName, revenue: 0, units: 0 };
         prodMap[pName].revenue += Number(item.total_price ?? (item.unit_price || 0) * item.quantity) || 0;
-        prodMap[pName].units += item.quantity;
+        prodMap[pName].units += Number(item.quantity) || 0;
       });
-      const topProdArray = Object.values(prodMap).sort((a: any, b: any) => b.revenue - a.revenue).slice(0, 5);
+      const allProducts = Object.values(prodMap);
+      const topProdArray = [...allProducts].sort((a, b) => b.revenue - a.revenue).slice(0, 5);
       setTopProducts(topProdArray);
+
+      const byUnits = [...allProducts].sort((a, b) => b.units - a.units);
+      setItemsBreakdown(
+        byUnits.map((p) => ({
+          name: p.name,
+          units: p.units,
+          revenue: p.revenue,
+          share: totalItemsSold > 0 ? (p.units / totalItemsSold) * 100 : 0,
+        })),
+      );
 
     } catch (err) {
       console.error('Error fetching analytics:', err);
@@ -197,7 +218,7 @@ export default function AnalyticsPage() {
         </div>
 
         {/* Metrics Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 md:gap-6 mb-8">
           <div className="bg-white rounded-xl shadow-sm p-6">
             <div className="flex items-center justify-between mb-4">
               <div className="w-12 h-12 flex items-center justify-center bg-emerald-100 rounded-lg">
@@ -207,6 +228,17 @@ export default function AnalyticsPage() {
             </div>
             <p className="text-sm text-gray-600 mb-1">Total Revenue</p>
             <p className="text-3xl font-bold text-gray-900">GH₵{metrics.revenue.toLocaleString()}</p>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="w-12 h-12 flex items-center justify-center bg-teal-100 rounded-lg">
+                <i className="ri-stack-line text-2xl text-teal-700"></i>
+              </div>
+            </div>
+            <p className="text-sm text-gray-600 mb-1">Items Sold</p>
+            <p className="text-3xl font-bold text-gray-900">{metrics.itemsSold.toLocaleString()}</p>
+            <p className="text-xs text-gray-400 mt-1">Units in this period</p>
           </div>
 
           <div className="bg-white rounded-xl shadow-sm p-6">
@@ -317,11 +349,11 @@ export default function AnalyticsPage() {
             </div>
           </div>
 
-          {/* Top Products */}
+          {/* Top Products by revenue */}
           <div className="bg-white rounded-xl shadow-sm p-6">
             <h2 className="text-xl font-bold text-gray-900 mb-4">Top Performing Products</h2>
             <div className="overflow-x-auto">
-              <table className="w-full">
+              <table className="w-full min-w-[20rem]">
                 <thead className="border-b border-gray-100">
                   <tr>
                     <th className="text-left pb-3 text-sm font-semibold text-gray-600">Product</th>
@@ -342,6 +374,93 @@ export default function AnalyticsPage() {
               </table>
             </div>
           </div>
+        </div>
+
+        {/* Items sold breakdown — matches Total Revenue / Items Sold cards for the selected range */}
+        <div className="bg-white rounded-xl shadow-sm p-4 sm:p-6 mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 mb-6">
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">Items Sold Breakdown</h2>
+              <p className="text-sm text-gray-500 mt-1">
+                {metrics.itemsSold.toLocaleString()} unit{metrics.itemsSold === 1 ? '' : 's'} across{' '}
+                {itemsBreakdown.length} product{itemsBreakdown.length === 1 ? '' : 's'} in this period
+              </p>
+            </div>
+          </div>
+
+          {itemsBreakdown.length > 0 ? (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              <div className="h-72 w-full min-w-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={itemsBreakdown.slice(0, 10)}
+                    layout="vertical"
+                    margin={{ top: 4, right: 16, left: 8, bottom: 4 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
+                    <XAxis type="number" allowDecimals={false} stroke="#6b7280" fontSize={12} />
+                    <YAxis
+                      type="category"
+                      dataKey="name"
+                      width={110}
+                      stroke="#6b7280"
+                      fontSize={11}
+                      tickFormatter={(v) => (String(v).length > 16 ? `${String(v).slice(0, 16)}…` : String(v))}
+                    />
+                    <Tooltip
+                      formatter={(value) => [`${Number(value ?? 0)} units`, 'Sold']}
+                      contentStyle={{ borderRadius: 8, border: '1px solid #e5e7eb' }}
+                    />
+                    <Bar dataKey="units" fill="#0d9488" radius={[0, 6, 6, 0]} name="Units" />
+                  </BarChart>
+                </ResponsiveContainer>
+                {itemsBreakdown.length > 10 && (
+                  <p className="text-xs text-gray-400 mt-2 text-center">Chart shows top 10 by units — full list on the right</p>
+                )}
+              </div>
+
+              <div className="overflow-x-auto overscroll-x-contain max-h-96 overflow-y-auto">
+                <table className="w-full min-w-[28rem] text-sm">
+                  <thead className="sticky top-0 bg-white border-b border-gray-100 z-10">
+                    <tr>
+                      <th className="text-left py-3 pr-3 font-semibold text-gray-600">#</th>
+                      <th className="text-left py-3 pr-3 font-semibold text-gray-600">Product</th>
+                      <th className="text-right py-3 pr-3 font-semibold text-gray-600">Units</th>
+                      <th className="text-right py-3 pr-3 font-semibold text-gray-600">Share</th>
+                      <th className="text-right py-3 font-semibold text-gray-600">Revenue</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {itemsBreakdown.map((row, i) => (
+                      <tr key={row.name} className="hover:bg-gray-50/80">
+                        <td className="py-2.5 pr-3 text-gray-400">{i + 1}</td>
+                        <td className="py-2.5 pr-3 font-medium text-gray-900">{row.name}</td>
+                        <td className="py-2.5 pr-3 text-right font-semibold text-teal-700">{row.units}</td>
+                        <td className="py-2.5 pr-3 text-right text-gray-500">{row.share.toFixed(1)}%</td>
+                        <td className="py-2.5 text-right text-emerald-600 font-medium">
+                          GH₵{row.revenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="border-t border-gray-200 bg-gray-50 sticky bottom-0">
+                    <tr>
+                      <td colSpan={2} className="py-3 pr-3 font-bold text-gray-900">Total</td>
+                      <td className="py-3 pr-3 text-right font-bold text-teal-800">{metrics.itemsSold}</td>
+                      <td className="py-3 pr-3 text-right font-semibold text-gray-600">100%</td>
+                      <td className="py-3 text-right font-bold text-emerald-700">
+                        GH₵{itemsBreakdown
+                          .reduce((s, r) => s + r.revenue, 0)
+                          .toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <p className="text-center py-10 text-gray-500">No items sold in this period.</p>
+          )}
         </div>
       </div>
     </div>

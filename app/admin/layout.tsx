@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { supabase, signOutFully } from '@/lib/supabase';
+import { useBodyScrollLock } from '@/lib/use-body-scroll-lock';
 import NotificationsBell from '@/components/admin/NotificationsBell';
 
 // Maps each admin URL prefix to the permission key that grants access.
@@ -73,6 +74,7 @@ export default function AdminLayout({
   const pathname = usePathname();
   const router = useRouter();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isMobile, setIsMobile] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -243,20 +245,20 @@ export default function AdminLayout({
 
   // Screen size check for initial state
   useEffect(() => {
-    const handleResize = () => {
-      if (window.innerWidth < 1024) {
-        // Only set to false if it's currently true? 
-        // Actually, let's just default to open on desktop, closed on mobile on mount only
-      }
-    };
+    const mq = window.matchMedia('(max-width: 1023px)');
+    const fn = () => setIsMobile(mq.matches);
+    fn();
+    mq.addEventListener('change', fn);
+    return () => mq.removeEventListener('change', fn);
+  }, []);
 
-    // Set initial state based on width
+  useEffect(() => {
     if (window.innerWidth < 1024) {
       setIsSidebarOpen(false);
     }
-
-    // Optional: Auto-close on resize to mobile? For now, leave as is.
   }, []);
+
+  useBodyScrollLock(isSidebarOpen && isMobile);
 
   const handleLogout = async () => {
     document.cookie = 'admin_session=; path=/; max-age=0';
@@ -440,8 +442,9 @@ export default function AdminLayout({
         </div>
       </aside>
 
-      {/* Main Content */}
-      <div className={`transition-all duration-300 ml-0 ${isSidebarOpen ? 'lg:ml-64' : 'lg:ml-0'}`}>
+      {/* Main Content — min-w-0 lets child tables scroll horizontally on mobile
+          instead of clipping (overflow-hidden parents + wide tables). */}
+      <div className={`transition-all duration-300 ml-0 min-w-0 ${isSidebarOpen ? 'lg:ml-64' : 'lg:ml-0'}`}>
         <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
           <div className="px-4 py-4 lg:px-6 flex items-center justify-between">
             <button
@@ -495,7 +498,7 @@ export default function AdminLayout({
           </div>
         </header>
 
-        <main className="p-4 lg:p-6">
+        <main className="p-4 lg:p-6 min-w-0">
           {children}
         </main>
       </div>

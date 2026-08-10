@@ -7,10 +7,12 @@ import { useCart } from '@/context/CartContext';
 import { supabase } from '@/lib/supabase';
 import { useCMS } from '@/context/CMSContext';
 import AnnouncementBar from './AnnouncementBar';
+import { useBodyScrollLock } from '@/lib/use-body-scroll-lock';
 
 export default function Header() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  useBodyScrollLock(isMobileMenuOpen || isSearchOpen);
   const [searchQuery, setSearchQuery] = useState('');
   const [wishlistCount, setWishlistCount] = useState(0);
   const [user, setUser] = useState<any>(null);
@@ -164,8 +166,8 @@ export default function Header() {
 
       {/* Full Screen Search Overlay */}
       {isSearchOpen && (
-        <div className="fixed inset-0 bg-white/95 backdrop-blur-sm z-[60] animate-in fade-in duration-200">
-          <div className="max-w-4xl mx-auto px-4 pt-32">
+        <div className="fixed inset-0 bg-white/95 backdrop-blur-sm z-[60] animate-in fade-in duration-200 overflow-y-auto overscroll-contain">
+          <div className="max-w-4xl mx-auto px-4 pt-32 pb-16">
             <div className="relative">
               <button
                 onClick={() => setIsSearchOpen(false)}

@@ -34,7 +34,9 @@ export default function ProductReviews({ productId }: ProductReviewsProps) {
   const formRef = useRef<HTMLFormElement | null>(null);
 
   const [reviewForm, setReviewForm] = useState({
-    rating: 5,
+    // 0 = not chosen yet. Defaulting to 5 made "I didn't click stars" still
+    // save as a 5-star review (e.g. anonymous "Bad" with five stars).
+    rating: 0,
     content: '',
     guestName: '',
     guestEmail: '',
@@ -134,6 +136,10 @@ export default function ProductReviews({ productId }: ProductReviewsProps) {
       alert('Please tell us your name (or tick "Post anonymously").');
       return;
     }
+    if (!reviewForm.rating || reviewForm.rating < 1 || reviewForm.rating > 5) {
+      alert('Please tap a star rating before submitting.');
+      return;
+    }
     if (!reviewForm.content.trim()) {
       alert('Please share a few words about your experience.');
       return;
@@ -183,7 +189,7 @@ export default function ProductReviews({ productId }: ProductReviewsProps) {
 
       alert('Thanks! Your review has been submitted and will appear after a quick check.');
       setShowReviewForm(false);
-      setReviewForm({ rating: 5, content: '', guestName: '', guestEmail: '', displayName: '' });
+      setReviewForm({ rating: 0, content: '', guestName: '', guestEmail: '', displayName: '' });
       setPostAnonymously(false);
       fetchReviews();
 
@@ -284,21 +290,30 @@ export default function ProductReviews({ productId }: ProductReviewsProps) {
 
           <div className="mb-4">
             <label className="block text-sm font-semibold text-gray-900 mb-2">Your Rating *</label>
-            <div className="flex space-x-2">
+            <div className="flex space-x-2" role="radiogroup" aria-label="Star rating">
               {[1, 2, 3, 4, 5].map((star) => (
                 <button
                   key={star}
                   type="button"
+                  role="radio"
+                  aria-checked={reviewForm.rating === star}
+                  aria-label={`${star} star${star === 1 ? '' : 's'}`}
                   onClick={() => setReviewForm({ ...reviewForm, rating: star })}
                   className="w-10 h-10 flex items-center justify-center"
                 >
                   <i
-                    className={`ri-star-${star <= reviewForm.rating ? 'fill' : 'line'} text-3xl ${star <= reviewForm.rating ? 'text-yellow-400' : 'text-gray-300'
-                      }`}
+                    className={`ri-star-${star <= reviewForm.rating ? 'fill' : 'line'} text-3xl ${
+                      star <= reviewForm.rating ? 'text-yellow-400' : 'text-gray-300'
+                    }`}
                   ></i>
                 </button>
               ))}
             </div>
+            <p className="mt-1.5 text-xs text-gray-500">
+              {reviewForm.rating
+                ? `${reviewForm.rating} of 5 stars selected`
+                : 'Tap a star to rate this product'}
+            </p>
           </div>
 
           {user ? (

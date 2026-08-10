@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import AdminTableScroll from '@/components/admin/AdminTableScroll';
 
 export default function AdminReviewsPage() {
   const [statusFilter, setStatusFilter] = useState('all');
@@ -266,8 +267,8 @@ export default function AdminReviewsPage() {
           </div>
         )}
 
-        <div className="overflow-x-auto">
-          <table className="w-full">
+        <AdminTableScroll>
+          <table className="w-full min-w-[42rem]">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="py-4 px-6">
@@ -379,7 +380,7 @@ export default function AdminReviewsPage() {
               )}
             </tbody>
           </table>
-        </div>
+        </AdminTableScroll>
 
         <div className="p-6 border-t border-gray-200">
           <p className="text-gray-600 text-sm">Showing {filteredReviews.length} reviews</p>
