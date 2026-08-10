@@ -12,6 +12,8 @@ import DeliveryAreaPicker from '@/components/DeliveryAreaPicker';
 import {
   DEFAULT_PROMOTIONS,
   applyDeliveryFeeAdjustments,
+  deliveryDiscountBadge,
+  effectiveDeliveryDiscountPercent,
   fetchStorePromotions,
   isDeliveryDiscountEligible,
   loyaltyDiscountAmount,
@@ -268,21 +270,22 @@ export default function CheckoutPage() {
       totalItems,
       eligible: deliveryDiscountEligible,
     });
-    const zonePct = Math.min(100, Math.max(0, Number(zone?.discount_percent) || 0));
+    const isFree =
+      deliveryDiscountEligible &&
+      final === 0 &&
+      (raw > 0 || !!zone?.free_delivery || freeByItemCount);
     return {
       raw,
       final,
       discounted: final < raw,
-      isFree: final === 0,
-      badge: !deliveryDiscountEligible
-        ? null
-        : zone?.free_delivery || freeByItemCount
-          ? 'FREE'
-          : zonePct > 0
-            ? `${zonePct}% off`
-            : promotions.globalDeliveryDiscountPercent > 0 && final < raw
-              ? `${promotions.globalDeliveryDiscountPercent}% off`
-              : null,
+      isFree,
+      badge: deliveryDiscountBadge({
+        eligible: deliveryDiscountEligible,
+        isFree,
+        rawFee: raw,
+        finalFee: final,
+      }),
+      effectivePercent: effectiveDeliveryDiscountPercent(raw, final),
       isFrom: methods.length > 1,
     };
   };
@@ -1171,14 +1174,13 @@ export default function CheckoutPage() {
                             <i className="ri-gift-line"></i> Free delivery to {activeZone?.name} right now!
                           </p>
                         )}
-                        {deliveryDiscountEligible && !freeByItemCount && !zoneFreeDelivery && zoneDiscountPercent > 0 && (
+                        {deliveryDiscountEligible && !freeByItemCount && !zoneFreeDelivery && zoneFee > shippingCost && (
                           <p className="text-sm text-emerald-700 font-medium mt-2 flex items-center gap-1">
-                            <i className="ri-percent-line"></i> {zoneDiscountPercent}% off delivery to {activeZone?.name} applied
-                          </p>
-                        )}
-                        {deliveryDiscountEligible && !freeByItemCount && !zoneFreeDelivery && promotions.globalDeliveryDiscountPercent > 0 && (
-                          <p className="text-sm text-emerald-700 font-medium mt-2 flex items-center gap-1">
-                            <i className="ri-truck-line"></i> {promotions.globalDeliveryDiscountPercent}% off delivery store-wide
+                            <i className="ri-percent-line"></i>
+                            {effectiveDeliveryDiscountPercent(zoneFee, shippingCost)}% off delivery to {activeZone?.name} applied
+                            {(zoneDiscountPercent > 0 && promotions.globalDeliveryDiscountPercent > 0)
+                              ? ` (area ${zoneDiscountPercent}% + store-wide ${promotions.globalDeliveryDiscountPercent}%)`
+                              : ''}
                           </p>
                         )}
                         {deliveryDiscountEligible && !freeByItemCount && promotions.freeDeliveryMinItems > 0 && totalItems < promotions.freeDeliveryMinItems && (

@@ -162,6 +162,30 @@ export function applyDeliveryFeeAdjustments(
   return Math.max(0, Math.round(result * 100) / 100);
 }
 
+/** True % saved after zone + global stacking (what customers actually pay). */
+export function effectiveDeliveryDiscountPercent(rawFee: number, finalFee: number): number {
+  const raw = Math.max(0, Number(rawFee) || 0);
+  const final = Math.max(0, Number(finalFee) || 0);
+  if (raw <= 0 || final >= raw) return 0;
+  return Math.min(100, Math.round((1 - final / raw) * 100));
+}
+
+/**
+ * Badge label for picker / summary. Prefer FREE, else the combined effective
+ * % so stacked zone+global discounts are never shown as a single misleading %.
+ */
+export function deliveryDiscountBadge(opts: {
+  eligible: boolean;
+  isFree: boolean;
+  rawFee: number;
+  finalFee: number;
+}): string | null {
+  if (!opts.eligible) return null;
+  if (opts.isFree) return 'FREE';
+  const pct = effectiveDeliveryDiscountPercent(opts.rawFee, opts.finalFee);
+  return pct > 0 ? `${pct}% OFF` : null;
+}
+
 export function loyaltyDiscountAmount(
   pointsBalance: number,
   redeem: boolean,
