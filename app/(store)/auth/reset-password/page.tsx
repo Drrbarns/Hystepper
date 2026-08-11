@@ -44,16 +44,17 @@ function clearStashedRecoveryToken() {
 }
 
 type Step = 'otp' | 'password';
+type OtpChannel = 'email' | 'sms';
 
 export default function ResetPasswordPage() {
   const router = useRouter();
   const [linkReady, setLinkReady] = useState<boolean | null>(null);
   const [step, setStep] = useState<Step>('otp');
-  const [channels, setChannels] = useState<Array<'email' | 'sms'>>(['email']);
+  const [channel, setChannel] = useState<OtpChannel>('email');
+  const [smsAvailable, setSmsAvailable] = useState(false);
   const [emailHint, setEmailHint] = useState('');
   const [phoneHint, setPhoneHint] = useState<string | null>(null);
-  const [emailOtp, setEmailOtp] = useState('');
-  const [smsOtp, setSmsOtp] = useState('');
+  const [otp, setOtp] = useState('');
   const [otpInfo, setOtpInfo] = useState('');
   const [sendingOtp, setSendingOtp] = useState(false);
   const [password, setPassword] = useState('');
@@ -64,31 +65,39 @@ export default function ResetPasswordPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  const sendOtps = async (token: string) => {
+  const sendOtps = async (token: string, nextChannel: OtpChannel = 'email') => {
     setSendingOtp(true);
     setError('');
     try {
       const res = await fetch('/api/auth/recovery/send-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({ token, channel: nextChannel }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json?.success) {
-        throw new Error(json?.error || 'Could not send verification codes.');
+        // Email failed but SMS backup is available — surface that path clearly.
+        if (json?.smsAvailable && nextChannel === 'email') {
+          setSmsAvailable(true);
+          setPhoneHint(json.phoneHint || null);
+          setEmailHint(json.emailHint || '');
+        }
+        throw new Error(json?.error || 'Could not send verification code.');
       }
-      const nextChannels = Array.isArray(json.channels) ? json.channels : ['email'];
-      setChannels(nextChannels);
+      const active: OtpChannel = json.channel === 'sms' ? 'sms' : 'email';
+      setChannel(active);
+      setSmsAvailable(!!json.smsAvailable);
       setEmailHint(json.emailHint || '');
       setPhoneHint(json.phoneHint || null);
+      setOtp('');
       setOtpInfo(
         json.message ||
-          (nextChannels.includes('sms')
-            ? 'We sent a code to your email and phone.'
+          (active === 'sms'
+            ? 'We sent a code by SMS.'
             : 'We sent a code to your email.'),
       );
     } catch (err: any) {
-      setError(err?.message || 'Could not send verification codes.');
+      setError(err?.message || 'Could not send verification code.');
     } finally {
       setSendingOtp(false);
     }
@@ -112,7 +121,7 @@ export default function ResetPasswordPage() {
     }
 
     setLinkReady(true);
-    void sendOtps(readyToken);
+    void sendOtps(readyToken, 'email');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -125,12 +134,10 @@ export default function ResetPasswordPage() {
       setLinkReady(false);
       return;
     }
-    if (!/^\d{6}$/.test(emailOtp.replace(/\D/g, ''))) {
-      setError('Enter the 6-digit code from your email.');
-      return;
-    }
-    if (channels.includes('sms') && !/^\d{6}$/.test(smsOtp.replace(/\D/g, ''))) {
-      setError('Enter the 6-digit code from your SMS.');
+    if (!/^\d{6}$/.test(otp.replace(/\D/g, ''))) {
+      setError(channel === 'sms'
+        ? 'Enter the 6-digit code from your SMS.'
+        : 'Enter the 6-digit code from your email.');
       return;
     }
 
@@ -141,8 +148,7 @@ export default function ResetPasswordPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           token,
-          email_otp: emailOtp.replace(/\D/g, ''),
-          sms_otp: smsOtp.replace(/\D/g, ''),
+          otp: otp.replace(/\D/g, ''),
         }),
       });
       const json = await res.json().catch(() => ({}));
@@ -267,9 +273,9 @@ export default function ResetPasswordPage() {
           </h1>
           <p className="text-gray-600">
             {step === 'otp'
-              ? channels.includes('sms')
-                ? 'Enter the codes we sent to your email and phone before choosing a new password.'
-                : 'Enter the code we sent to your email before choosing a new password.'
+              ? channel === 'sms'
+                ? 'Enter the SMS code we sent to your phone, then choose a new password.'
+                : 'Enter the code we sent to your email, then choose a new password.'
               : 'Choose a strong password to secure your account. Your old password is not required.'}
           </p>
         </div>
@@ -291,62 +297,85 @@ export default function ResetPasswordPage() {
 
               <div>
                 <label className="block text-sm font-semibold text-gray-900 mb-2">
-                  Email code {emailHint ? <span className="font-normal text-gray-500">({emailHint})</span> : null}
+                  {channel === 'sms' ? (
+                    <>
+                      SMS code{' '}
+                      {phoneHint ? <span className="font-normal text-gray-500">({phoneHint})</span> : null}
+                    </>
+                  ) : (
+                    <>
+                      Email code{' '}
+                      {emailHint ? <span className="font-normal text-gray-500">({emailHint})</span> : null}
+                    </>
+                  )}
                 </label>
                 <input
                   type="text"
                   inputMode="numeric"
                   autoComplete="one-time-code"
                   maxLength={6}
-                  value={emailOtp}
-                  onChange={(e) => setEmailOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
                   className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-center text-2xl tracking-[0.4em] font-semibold focus:ring-2 focus:ring-gold-500 focus:border-gold-500"
                   placeholder="••••••"
                   autoFocus
                 />
               </div>
 
-              {channels.includes('sms') && (
-                <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-2">
-                    SMS code {phoneHint ? <span className="font-normal text-gray-500">({phoneHint})</span> : null}
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    maxLength={6}
-                    value={smsOtp}
-                    onChange={(e) => setSmsOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-center text-2xl tracking-[0.4em] font-semibold focus:ring-2 focus:ring-gold-500 focus:border-gold-500"
-                    placeholder="••••••"
-                  />
-                </div>
-              )}
-
               <button
                 type="submit"
-                disabled={
-                  isLoading ||
-                  emailOtp.length !== 6 ||
-                  (channels.includes('sms') && smsOtp.length !== 6)
-                }
+                disabled={isLoading || otp.length !== 6}
                 className="w-full bg-gold-600 hover:bg-gold-700 text-white py-4 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 {isLoading ? 'Verifying…' : 'Continue'}
               </button>
 
-              <button
-                type="button"
-                disabled={sendingOtp}
-                onClick={() => {
-                  const token = readStashedRecoveryToken();
-                  if (token) void sendOtps(token);
-                }}
-                className="w-full py-2 text-sm font-semibold text-gold-600 hover:text-gold-700 disabled:opacity-50 cursor-pointer"
-              >
-                {sendingOtp ? 'Sending…' : 'Resend codes'}
-              </button>
+              <div className="space-y-2 text-center">
+                <button
+                  type="button"
+                  disabled={sendingOtp}
+                  onClick={() => {
+                    const token = readStashedRecoveryToken();
+                    if (token) void sendOtps(token, channel);
+                  }}
+                  className="w-full py-2 text-sm font-semibold text-gold-600 hover:text-gold-700 disabled:opacity-50 cursor-pointer"
+                >
+                  {sendingOtp
+                    ? 'Sending…'
+                    : channel === 'sms'
+                      ? 'Resend SMS code'
+                      : 'Resend email code'}
+                </button>
+
+                {channel === 'email' && smsAvailable && (
+                  <button
+                    type="button"
+                    disabled={sendingOtp}
+                    onClick={() => {
+                      const token = readStashedRecoveryToken();
+                      if (token) void sendOtps(token, 'sms');
+                    }}
+                    className="w-full py-2 text-sm text-gray-600 hover:text-gray-900 disabled:opacity-50 cursor-pointer"
+                  >
+                    Didn&apos;t get the email? Send code by SMS
+                    {phoneHint ? ` (${phoneHint})` : ''}
+                  </button>
+                )}
+
+                {channel === 'sms' && (
+                  <button
+                    type="button"
+                    disabled={sendingOtp}
+                    onClick={() => {
+                      const token = readStashedRecoveryToken();
+                      if (token) void sendOtps(token, 'email');
+                    }}
+                    className="w-full py-2 text-sm text-gray-600 hover:text-gray-900 disabled:opacity-50 cursor-pointer"
+                  >
+                    Prefer email? Send code to {emailHint || 'your email'}
+                  </button>
+                )}
+              </div>
             </form>
           ) : (
             <form onSubmit={handleSubmitPassword} className="space-y-6">

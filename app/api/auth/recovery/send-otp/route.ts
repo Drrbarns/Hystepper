@@ -8,8 +8,9 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * After the email reset link is opened, send second-factor OTPs:
- * always email; SMS too when the account has a phone number.
+ * After the email reset link is opened, send a verification OTP.
+ * Email is primary; SMS is only sent when the client requests channel=sms
+ * as a backup (account must have a phone on file).
  */
 export async function POST(req: NextRequest) {
   const clientId = getClientIdentifier(req);
@@ -26,6 +27,9 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => ({}));
   const token = String(body.token || body.access_token || body.token_hash || '').trim();
+  const channelRaw = String(body.channel || 'email').trim().toLowerCase();
+  const channel = channelRaw === 'sms' ? 'sms' : 'email';
+
   if (!token || token.length < 16) {
     return NextResponse.json(
       { success: false, error: 'Reset link is missing or invalid. Request a new one.' },
@@ -33,7 +37,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const issued = await issueRecoveryOtps(token);
+  const issued = await issueRecoveryOtps(token, { channel });
   if (!issued) {
     return NextResponse.json(
       {
@@ -44,46 +48,81 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  if ('error' in issued) {
+    return NextResponse.json({ success: false, error: issued.error }, { status: 400 });
+  }
+
   if ('cooldown' in issued && issued.cooldown) {
     return NextResponse.json({
       success: true,
       cooldown: true,
-      channels: issued.channels,
+      channel: issued.channel,
+      smsAvailable: issued.smsAvailable,
       emailHint: issued.emailHint,
       phoneHint: issued.phoneHint,
-      message: 'Codes were just sent. Wait a minute before requesting new ones.',
+      message:
+        issued.channel === 'sms'
+          ? 'An SMS code was just sent. Wait a minute before requesting another.'
+          : 'An email code was just sent. Wait a minute before requesting another.',
     });
   }
 
-  const payload = issued as Exclude<typeof issued, { cooldown: true }>;
+  const payload = issued as Exclude<typeof issued, { cooldown: true } | { error: string }>;
 
-  const emailOk = await sendAuthEmail({
-    to: payload.email,
-    subject: 'Your Hy_stepper password reset code',
-    html: recoveryOtpEmailHtml(payload.emailOtp),
-  });
+  if (payload.channel === 'email' && payload.emailOtp) {
+    const emailOk = await sendAuthEmail({
+      to: payload.email,
+      subject: 'Your Hy_stepper password reset code',
+      html: recoveryOtpEmailHtml(payload.emailOtp),
+    });
+    if (!emailOk) {
+      console.error('[recovery-send-otp] email OTP failed to send for', payload.emailHint);
+      return NextResponse.json(
+        {
+          success: false,
+          channel: 'email',
+          smsAvailable: payload.smsAvailable,
+          emailHint: payload.emailHint,
+          phoneHint: payload.phoneHint,
+          error: payload.smsAvailable
+            ? 'Could not send the email code. Try SMS backup instead.'
+            : 'Could not send the email code. Please try again in a moment.',
+        },
+        { status: 502 },
+      );
+    }
+  }
 
-  if (payload.phone && payload.smsOtp) {
+  if (payload.channel === 'sms' && payload.phone && payload.smsOtp) {
     const sms = await sendSMS({
       to: payload.phone,
       message: `Your Hy-Stepper password reset code is ${payload.smsOtp}. It expires in 10 minutes. Do not share this code.`,
     });
     if (!sms?.success) {
       console.error('[recovery-send-otp] SMS OTP failed to send for', payload.phoneHint, sms);
+      return NextResponse.json(
+        {
+          success: false,
+          channel: 'sms',
+          smsAvailable: payload.smsAvailable,
+          emailHint: payload.emailHint,
+          phoneHint: payload.phoneHint,
+          error: 'Could not send the SMS code. Try the email code instead.',
+        },
+        { status: 502 },
+      );
     }
-  }
-
-  if (!emailOk) {
-    console.error('[recovery-send-otp] email OTP failed to send for', payload.emailHint);
   }
 
   return NextResponse.json({
     success: true,
-    channels: payload.channels,
+    channel: payload.channel,
+    smsAvailable: payload.smsAvailable,
     emailHint: payload.emailHint,
     phoneHint: payload.phoneHint,
-    message: payload.channels.includes('sms')
-      ? 'We sent a code to your email and phone.'
-      : 'We sent a code to your email.',
+    message:
+      payload.channel === 'sms'
+        ? `We sent a code by SMS${payload.phoneHint ? ` (${payload.phoneHint})` : ''}.`
+        : `We sent a code to your email${payload.emailHint ? ` (${payload.emailHint})` : ''}.`,
   });
 }

@@ -36,16 +36,22 @@ const RECOVERY_OTP_VERIFIED_TTL_MS = 15 * 60 * 1000;
 const RECOVERY_OTP_RESEND_MS = 60 * 1000;
 const RECOVERY_OTP_MAX_ATTEMPTS = 8;
 
+type RecoveryOtpChannel = "email" | "sms";
+
 type RecoveryOtpState = {
-  email_hash: string;
+  /** Active verification channel — email primary, SMS only as backup. */
+  channel: RecoveryOtpChannel;
+  email_hash?: string | null;
   sms_hash?: string | null;
   sent_at: string;
-  require_sms: boolean;
-  email_attempts: number;
-  sms_attempts: number;
+  attempts: number;
+  verified_at?: string | null;
+  /** Legacy fields kept for in-flight sessions from older deploys. */
+  require_sms?: boolean;
+  email_attempts?: number;
+  sms_attempts?: number;
   email_ok?: boolean;
   sms_ok?: boolean;
-  verified_at?: string | null;
 };
 
 export function maskEmailForHint(email: string): string {
@@ -67,17 +73,39 @@ export function maskPhoneForHint(phone: string): string {
 function readRecoveryOtpState(row: any): RecoveryOtpState | null {
   const raw = row?.raw_app_meta_data?.recovery_otp;
   if (!raw || typeof raw !== "object") return null;
-  if (!raw.email_hash || !raw.sent_at) return null;
+  if (!raw.sent_at) return null;
+
+  // Prefer explicit channel; fall back for sessions created before this change.
+  let channel: RecoveryOtpChannel =
+    raw.channel === "sms" || raw.channel === "email"
+      ? raw.channel
+      : raw.require_sms && !raw.email_ok
+        ? "email" // old dual-code flow still started on email
+        : raw.sms_hash && !raw.email_hash
+          ? "sms"
+          : "email";
+
+  const emailHash = raw.email_hash ? String(raw.email_hash) : null;
+  const smsHash = raw.sms_hash ? String(raw.sms_hash) : null;
+  if (channel === "email" && !emailHash) return null;
+  if (channel === "sms" && !smsHash) return null;
+
+  const attempts =
+    Number(raw.attempts ?? 0) ||
+    Number(raw.email_attempts || 0) + Number(raw.sms_attempts || 0);
+
   return {
-    email_hash: String(raw.email_hash),
-    sms_hash: raw.sms_hash ? String(raw.sms_hash) : null,
+    channel,
+    email_hash: emailHash,
+    sms_hash: smsHash,
     sent_at: String(raw.sent_at),
+    attempts,
+    verified_at: raw.verified_at ? String(raw.verified_at) : null,
     require_sms: !!raw.require_sms,
     email_attempts: Number(raw.email_attempts || 0),
     sms_attempts: Number(raw.sms_attempts || 0),
     email_ok: !!raw.email_ok,
     sms_ok: !!raw.sms_ok,
-    verified_at: raw.verified_at ? String(raw.verified_at) : null,
   };
 }
 
@@ -117,63 +145,79 @@ export async function resolveUserPhone(row: any): Promise<string | null> {
 }
 
 /**
- * Issue email (+ SMS when phone on file) OTPs for an active recovery link.
- * Does not rotate the recovery_token itself.
+ * Issue a recovery OTP for an active reset link.
+ * Email is primary; SMS is opt-in backup when the user didn't get email.
  */
 export async function issueRecoveryOtps(
   recoveryToken: string,
-  opts?: { force?: boolean }
+  opts?: { force?: boolean; channel?: RecoveryOtpChannel }
 ): Promise<
   | {
-      channels: Array<"email" | "sms">;
+      channel: RecoveryOtpChannel;
+      smsAvailable: boolean;
       emailHint: string;
       phoneHint: string | null;
       cooldown?: false;
-      emailOtp: string;
+      emailOtp: string | null;
       smsOtp: string | null;
       userId: string;
       email: string;
       phone: string | null;
     }
-  | { cooldown: true; channels: Array<"email" | "sms">; emailHint: string; phoneHint: string | null }
+  | {
+      cooldown: true;
+      channel: RecoveryOtpChannel;
+      smsAvailable: boolean;
+      emailHint: string;
+      phoneHint: string | null;
+    }
+  | { error: string }
   | null
 > {
   const row = await findUserByRecoveryToken(recoveryToken);
   if (!row) return null;
 
-  const existing = readRecoveryOtpState(row);
   const phone = await resolveUserPhone(row);
-  const channels: Array<"email" | "sms"> = phone ? ["email", "sms"] : ["email"];
+  const smsAvailable = !!phone;
+  const requested = opts?.channel === "sms" ? "sms" : "email";
+  if (requested === "sms" && !phone) {
+    return { error: "No phone number on this account. Use the email code instead." };
+  }
 
-  if (!opts?.force && existing?.sent_at) {
+  const existing = readRecoveryOtpState(row);
+  if (!opts?.force && existing?.sent_at && existing.channel === requested) {
     const elapsed = Date.now() - new Date(existing.sent_at).getTime();
     if (elapsed < RECOVERY_OTP_RESEND_MS && elapsed >= 0) {
       return {
         cooldown: true,
-        channels,
+        channel: requested,
+        smsAvailable,
         emailHint: maskEmailForHint(row.email),
         phoneHint: phone ? maskPhoneForHint(phone) : null,
       };
     }
   }
 
-  const emailOtp = generateSmsOtp();
-  const smsOtp = phone ? generateSmsOtp() : null;
+  const emailOtp = requested === "email" ? generateSmsOtp() : null;
+  const smsOtp = requested === "sms" ? generateSmsOtp() : null;
   const state: RecoveryOtpState = {
-    email_hash: bcrypt.hashSync(emailOtp, 8),
+    channel: requested,
+    email_hash: emailOtp ? bcrypt.hashSync(emailOtp, 8) : null,
     sms_hash: smsOtp ? bcrypt.hashSync(smsOtp, 8) : null,
     sent_at: new Date().toISOString(),
-    require_sms: !!phone,
+    attempts: 0,
+    verified_at: null,
+    require_sms: false,
     email_attempts: 0,
     sms_attempts: 0,
     email_ok: false,
-    sms_ok: !phone,
-    verified_at: null,
+    sms_ok: false,
   };
   await writeRecoveryOtpState(row.id, state);
 
   return {
-    channels,
+    channel: requested,
+    smsAvailable,
     emailHint: maskEmailForHint(row.email),
     phoneHint: phone ? maskPhoneForHint(phone) : null,
     emailOtp,
@@ -185,12 +229,12 @@ export async function issueRecoveryOtps(
 }
 
 /**
- * Verify recovery OTPs. Email is always required; SMS required when phone on file.
+ * Verify the active recovery OTP (email primary, or SMS if user switched to backup).
  * On success sets recovery_otp.verified_at (short window for password write).
  */
 export async function verifyRecoveryOtps(
   recoveryToken: string,
-  opts: { emailOtp: string; smsOtp?: string }
+  opts: { otp?: string; emailOtp?: string; smsOtp?: string }
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const row = await findUserByRecoveryToken(recoveryToken);
   if (!row) return { ok: false, error: "Reset link is invalid or expired. Request a new one." };
@@ -200,52 +244,54 @@ export async function verifyRecoveryOtps(
 
   const age = Date.now() - new Date(state.sent_at).getTime();
   if (Number.isNaN(age) || age > RECOVERY_OTP_TTL_MS) {
-    return { ok: false, error: "Verification codes expired. Tap Resend for new codes." };
+    return { ok: false, error: "Verification code expired. Tap Resend for a new code." };
   }
 
-  const emailCleaned = String(opts.emailOtp || "").replace(/\D/g, "");
-  if (!/^\d{6}$/.test(emailCleaned)) {
-    return { ok: false, error: "Enter the 6-digit email code." };
-  }
-  if (state.email_attempts >= RECOVERY_OTP_MAX_ATTEMPTS) {
-    return { ok: false, error: "Too many attempts. Request new codes." };
+  if (state.attempts >= RECOVERY_OTP_MAX_ATTEMPTS) {
+    return { ok: false, error: "Too many attempts. Request a new code." };
   }
 
-  let emailOk = state.email_ok;
-  if (!emailOk) {
-    emailOk = bcrypt.compareSync(emailCleaned, state.email_hash);
-    if (!emailOk) {
-      const next: RecoveryOtpState = { ...state, email_attempts: state.email_attempts + 1 };
-      await writeRecoveryOtpState(row.id, next);
-      return { ok: false, error: "Invalid email verification code." };
-    }
+  const channel = state.channel;
+  const rawOtp =
+    String(opts.otp || "").replace(/\D/g, "") ||
+    (channel === "sms"
+      ? String(opts.smsOtp || opts.emailOtp || "").replace(/\D/g, "")
+      : String(opts.emailOtp || opts.smsOtp || "").replace(/\D/g, ""));
+
+  if (!/^\d{6}$/.test(rawOtp)) {
+    return {
+      ok: false,
+      error: channel === "sms"
+        ? "Enter the 6-digit SMS code."
+        : "Enter the 6-digit email code.",
+    };
   }
 
-  let smsOk = !state.require_sms || state.sms_ok;
-  if (state.require_sms && !state.sms_ok) {
-    const smsCleaned = String(opts.smsOtp || "").replace(/\D/g, "");
-    if (!/^\d{6}$/.test(smsCleaned)) {
-      return { ok: false, error: "Enter the 6-digit SMS code sent to your phone." };
-    }
-    if (state.sms_attempts >= RECOVERY_OTP_MAX_ATTEMPTS) {
-      return { ok: false, error: "Too many attempts. Request new codes." };
-    }
-    if (!state.sms_hash || !bcrypt.compareSync(smsCleaned, state.sms_hash)) {
-      const next: RecoveryOtpState = {
-        ...state,
-        email_ok: emailOk,
-        sms_attempts: state.sms_attempts + 1,
-      };
-      await writeRecoveryOtpState(row.id, next);
-      return { ok: false, error: "Invalid SMS verification code." };
-    }
-    smsOk = true;
+  // Legacy dual-code sessions stored both hashes + require_sms. New policy:
+  // one matching code on the active channel is enough (email preferred).
+  const candidates = [
+    channel === "sms" ? state.sms_hash : state.email_hash,
+    // Allow email code even if an old session still marked require_sms.
+    state.email_hash,
+  ].filter(Boolean) as string[];
+
+  const matched = candidates.some((hash) => bcrypt.compareSync(rawOtp, hash));
+  if (!matched) {
+    const next: RecoveryOtpState = { ...state, attempts: state.attempts + 1 };
+    await writeRecoveryOtpState(row.id, next);
+    return {
+      ok: false,
+      error: channel === "sms"
+        ? "Invalid SMS verification code."
+        : "Invalid email verification code.",
+    };
   }
 
   const verified: RecoveryOtpState = {
     ...state,
     email_ok: true,
-    sms_ok: smsOk,
+    sms_ok: channel === "sms",
+    require_sms: false,
     verified_at: new Date().toISOString(),
   };
   await writeRecoveryOtpState(row.id, verified);
