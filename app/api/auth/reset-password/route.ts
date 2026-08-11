@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   findUserByRecoveryToken,
   updateUserPassword,
+  userHasVerifiedRecoveryOtp,
 } from '@/server/auth';
 import { checkRateLimit, getClientIdentifier } from '@/lib/rate-limit';
 
@@ -9,8 +10,8 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * Complete a forgot-password reset using the one-time email token.
- * Does NOT require the old password — that's the point of the email link.
+ * Complete a forgot-password reset using the one-time email link token
+ * AFTER email (+ SMS when phone on file) OTP verification.
  */
 export async function POST(req: NextRequest) {
   const clientId = getClientIdentifier(req);
@@ -50,6 +51,19 @@ export async function POST(req: NextRequest) {
         error: 'Reset link is invalid or expired. Request a new password reset email.',
       },
       { status: 401 },
+    );
+  }
+
+  if (!userHasVerifiedRecoveryOtp(row)) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'Verify the codes sent to your email' +
+          (row.phone || row.raw_user_meta_data?.phone ? ' and phone' : '') +
+          ' before setting a new password.',
+        code: 'otp_required',
+      },
+      { status: 403 },
     );
   }
 

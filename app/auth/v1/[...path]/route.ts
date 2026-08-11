@@ -18,6 +18,7 @@ import {
   updateUserMetadata,
   updateUserPassword,
   userHasActiveRecovery,
+  userHasVerifiedRecoveryOtp,
   verifyAccessToken,
   verifyPassword,
 } from "@/server/auth";
@@ -201,14 +202,22 @@ async function handleUser(req: NextRequest) {
       if (newPassword.length < 6) {
         return err("Password must be at least 6 characters", 422, "weak_password");
       }
-      // Email reset flow: recovery JWT (amr=recovery) OR a still-valid
-      // recovery_token on the user may set a new password without the old one.
+      // Email reset flow: recovery JWT / active recovery link may skip the old
+      // password, but only after email (+ SMS) OTP verification.
       // Logged-in Account → Security changes still require current_password.
       const amrMethod = String(
         (verified.payload as any)?.amr?.[0]?.method || "password"
       );
       const viaEmailReset = amrMethod === "recovery" || userHasActiveRecovery(row);
-      if (!viaEmailReset) {
+      if (viaEmailReset) {
+        if (!userHasVerifiedRecoveryOtp(row)) {
+          return err(
+            "Verify the codes sent to your email and phone before setting a new password",
+            403,
+            "otp_required"
+          );
+        }
+      } else {
         const current = String(body.current_password || "");
         if (!current) {
           return err("Current password is required to set a new password", 400, "reauthentication_needed");

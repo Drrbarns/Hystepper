@@ -117,7 +117,7 @@ export default function ContactPage() {
     },
     {
       question: 'How do I know my size?',
-      answer: 'We recommend checking our size guide on each product page. Our sizes range from 37 to 41 (EU). If you\'re unsure, send us a message on WhatsApp and we\'ll help you find the right fit.'
+      answer: 'We recommend checking our size guide on each product page. Our sizes typically range from 36 to 42 (EU). If you\'re unsure, send us a message on WhatsApp and we\'ll help you find the right fit.'
     }
   ];
 

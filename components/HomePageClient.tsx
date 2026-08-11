@@ -362,7 +362,7 @@ export default function HomePageClient({
               </div>
 
               <div className="flex-1 flex items-center py-7 md:py-10 pl-0 md:pl-10 gap-3 overflow-x-auto scrollbar-hide">
-                {[37, 38, 39, 40, 41].map((size) => (
+                {[36, 37, 38, 39, 40, 41, 42].map((size) => (
                   <Link
                     key={size}
                     href={`/shop?size=${size}`}

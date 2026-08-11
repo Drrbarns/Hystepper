@@ -271,14 +271,21 @@ function ShopContent() {
         // single-option variants where option1 may not be populated.
         const sizeParam = searchParams.get('size')?.trim();
         if (sizeParam) {
-          const { data: sizeVariants } = await supabase
-            .from('product_variants')
-            .select('product_id')
-            .gt('quantity', 0)
-            .or(`option1.eq.${sizeParam},name.eq.${sizeParam},name.ilike.${sizeParam} / %`);
+          // Prefer option1; also match legacy "36 / Black" / bare "36" names.
+          // Use separate filters (not a raw .or string) so spaces in "36 / %" parse correctly.
+          const safeSize = sizeParam.replace(/[,%]/g, '');
+          const [byOption, byExactName, byPrefixedName] = await Promise.all([
+            supabase.from('product_variants').select('product_id').gt('quantity', 0).eq('option1', safeSize),
+            supabase.from('product_variants').select('product_id').gt('quantity', 0).eq('name', safeSize),
+            supabase.from('product_variants').select('product_id').gt('quantity', 0).ilike('name', `${safeSize} / %`),
+          ]);
+          const productIds = [...new Set(
+            [...(byOption.data || []), ...(byExactName.data || []), ...(byPrefixedName.data || [])]
+              .map((v: any) => v.product_id)
+              .filter(Boolean),
+          )];
 
-          if (sizeVariants && sizeVariants.length > 0) {
-            const productIds = [...new Set(sizeVariants.map(v => v.product_id))];
+          if (productIds.length > 0) {
             query = query.in('id', productIds);
           } else {
             query = query.in('id', ['00000000-0000-0000-0000-000000000000']);
@@ -751,8 +758,21 @@ function ShopContent() {
 
             <div className="flex-1">
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 gap-4">
-                <p className="text-gray-600">
-                  Showing <span className="font-semibold text-gray-900">{products.length}</span> of <span className="font-semibold text-gray-900">{totalProducts}</span> products
+                <p className="text-gray-600" aria-live="polite">
+                  {loading ? (
+                    <span className="inline-flex items-center gap-2 text-gray-500">
+                      <i className="ri-loader-4-line animate-spin" aria-hidden />
+                      {activeSearch ? 'Searching…' : 'Loading products…'}
+                    </span>
+                  ) : (
+                    <>
+                      Showing{' '}
+                      <span className="font-semibold text-gray-900">{products.length}</span>
+                      {' '}of{' '}
+                      <span className="font-semibold text-gray-900">{totalProducts}</span>
+                      {' '}products
+                    </>
+                  )}
                 </p>
 
                 <div className="flex items-center space-x-3">

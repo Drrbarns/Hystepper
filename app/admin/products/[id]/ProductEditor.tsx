@@ -113,7 +113,7 @@ function mergeBuilderVariants(
       for (const color of activeColors) {
         const name = `${size} / ${color.name}`;
         ensure(name, () => ({
-          id: tempId(), name, option2: color.name,
+          id: tempId(), name, option1: size, option2: color.name,
           option3: color.image_url ? null : (color.hex || null),
           image_url: color.image_url || null, price: basePrice, quantity: 0,
           _size: size, _color: color.name, _disabled: false,
@@ -124,7 +124,7 @@ function mergeBuilderVariants(
   } else if (mode === 'size_only') {
     for (const size of sizes) {
       ensure(size, () => ({
-        id: tempId(), name: size, option2: null, option3: null, image_url: null,
+        id: tempId(), name: size, option1: size, option2: null, option3: null, image_url: null,
         price: basePrice, quantity: 0, _size: size, _disabled: false, _appearanceMode: 'color',
       }));
     }
@@ -294,8 +294,12 @@ export default function ProductEditor({ productId }: { productId: string }) {
 
           if (hasCombo) {
             setVariantMode('size_color');
-            const sizes = [...new Set(pvs.map((v: any) => v.name?.split(' / ')[0]).filter(Boolean))] as string[];
-            setBuilderSizes(sizes.join(', '));
+            const sizes = [...new Set(pvs.map((v: any) => {
+              const fromOpt = String(v.option1 || '').trim();
+              if (fromOpt) return fromOpt;
+              return v.name?.includes(' / ') ? v.name.split(' / ')[0].trim() : '';
+            }).filter(Boolean))] as string[];
+            setBuilderSizes(sizes.sort((a, b) => Number(a) - Number(b) || a.localeCompare(b)).join(', '));
             const colorMap = new Map<string, { id: string; name: string; hex: string; image_url: string | null }>();
             pvs.forEach((v: any) => {
               if (v.option2 && !colorMap.has(v.option2)) {
@@ -400,6 +404,7 @@ export default function ProductEditor({ productId }: { productId: string }) {
           combinations.push(carryOver(name, {
             id: `temp-${Date.now()}-${Math.random()}`,
             name,
+            option1: size,
             option2: color.name,
             option3: color.image_url ? null : (color.hex || null),
             image_url: color.image_url || null,
@@ -417,6 +422,7 @@ export default function ProductEditor({ productId }: { productId: string }) {
         combinations.push(carryOver(size, {
           id: `temp-${Date.now()}-${Math.random()}`,
           name: size,
+          option1: size,
           option2: null,
           option3: null,
           image_url: null,
@@ -600,15 +606,25 @@ export default function ProductEditor({ productId }: { productId: string }) {
         setVariants(effectiveVariants);
       }
 
-      // 1. Build upsert payload — strip temp IDs, exclude disabled combinations
+      // 1. Build upsert payload — strip temp IDs, exclude disabled combinations.
+      // Always persist option1 (size) so shop filters + PDP size chips stay correct.
       const variantsToUpsert = effectiveVariants.filter(v => !v._disabled).map(v => {
         const variantPrice = basePriceChanged && Number(v.price) === loadedBasePrice
           ? newBasePrice
           : (v.price || 0);
+        const sizeFromName =
+          typeof v.name === 'string' && v.name.includes(' / ')
+            ? v.name.split(' / ')[0].trim()
+            : (v.option2 ? null : String(v.name || '').trim());
+        const option1 = String(v._size || v.option1 || sizeFromName || '').trim() || null;
+        const option2 = v.option2 != null && String(v.option2).trim() !== ''
+          ? String(v.option2).trim()
+          : null;
         const payload: any = {
           product_id: targetId,
-          name: v.name,
-          option2: v.option2,
+          name: String(v.name || '').trim(),
+          option1,
+          option2,
           option3: v.option3 || null,
           image_url: v.image_url || null,
           price: variantPrice,
@@ -623,23 +639,37 @@ export default function ProductEditor({ productId }: { productId: string }) {
         ? variantsToUpsert.reduce((sum, v) => sum + (Number(v.quantity) || 0), 0)
         : (parseInt(stock) || 0);
 
-      // 2. Delete variants that were removed — use correct Supabase v2 IN format
+      // 2. Delete variants that were removed (safe id list — avoid fragile .not/.in string form)
       if (productId !== 'new') {
-        const keptIds = variantsToUpsert.filter(v => v.id).map(v => v.id as string);
+        const keptIds = new Set(
+          variantsToUpsert.filter(v => v.id).map(v => String(v.id)),
+        );
 
-        if (keptIds.length > 0) {
-          // Supabase v2 requires the IN list as a comma-separated string wrapped in parens
-          await supabase
-            .from('product_variants')
-            .delete()
-            .eq('product_id', targetId)
-            .not('id', 'in', `(${keptIds.join(',')})`);
-        } else if (effectiveVariants.length === 0) {
-          // User deleted every variant
+        if (effectiveVariants.length === 0 || variantsToUpsert.length === 0) {
           await supabase.from('product_variants').delete().eq('product_id', targetId);
         } else {
-          // All variants are new (temp IDs) — delete old DB rows first
-          await supabase.from('product_variants').delete().eq('product_id', targetId);
+          const { data: existingRows, error: existingErr } = await supabase
+            .from('product_variants')
+            .select('id')
+            .eq('product_id', targetId);
+          if (existingErr) {
+            console.error('Variant list error:', existingErr);
+            toast.error(`Could not update variants: ${existingErr.message}`);
+          } else {
+            const toDelete = (existingRows || [])
+              .map((r: any) => String(r.id))
+              .filter((id: string) => !keptIds.has(id));
+            if (toDelete.length > 0) {
+              const { error: delErr } = await supabase
+                .from('product_variants')
+                .delete()
+                .in('id', toDelete);
+              if (delErr) {
+                console.error('Variant delete error:', delErr);
+                toast.error(`Could not remove old variants: ${delErr.message}`);
+              }
+            }
+          }
         }
       }
 
@@ -648,7 +678,7 @@ export default function ProductEditor({ productId }: { productId: string }) {
         const { error: variantError } = await supabase.from('product_variants').upsert(variantsToUpsert);
         if (variantError) {
           console.error('Variant save error:', variantError);
-          toast.error('Product saved, but variants failed to update');
+          toast.error(`Product saved, but variants failed: ${variantError.message}`);
         }
       }
 
@@ -1158,10 +1188,10 @@ export default function ProductEditor({ productId }: { productId: string }) {
                       <div className="flex items-center gap-3">
                         <button
                           type="button"
-                          onClick={() => setBuilderSizes(PRESET_SHOE_SIZES.slice(1, 7).join(', '))}
+                          onClick={() => setBuilderSizes(PRESET_SHOE_SIZES.slice(0, 7).join(', '))}
                           className="text-xs text-emerald-700 hover:text-emerald-800 font-medium cursor-pointer"
                         >
-                          Use 37-42
+                          Use 36-42
                         </button>
                         <button
                           type="button"
@@ -1390,6 +1420,7 @@ export default function ProductEditor({ productId }: { productId: string }) {
                                           setVariants(prev => [...prev, {
                                             id: `temp-${Date.now()}-${Math.random()}`,
                                             name: `${size} / ${color.name}`,
+                                            option1: size,
                                             option2: color.name,
                                             option3: color.image_url ? null : (color.hex || null),
                                             image_url: color.image_url || null,

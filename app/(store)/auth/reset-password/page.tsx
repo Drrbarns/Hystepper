@@ -43,9 +43,19 @@ function clearStashedRecoveryToken() {
   } catch { /* ignore */ }
 }
 
+type Step = 'otp' | 'password';
+
 export default function ResetPasswordPage() {
   const router = useRouter();
   const [linkReady, setLinkReady] = useState<boolean | null>(null);
+  const [step, setStep] = useState<Step>('otp');
+  const [channels, setChannels] = useState<Array<'email' | 'sms'>>(['email']);
+  const [emailHint, setEmailHint] = useState('');
+  const [phoneHint, setPhoneHint] = useState<string | null>(null);
+  const [emailOtp, setEmailOtp] = useState('');
+  const [smsOtp, setSmsOtp] = useState('');
+  const [otpInfo, setOtpInfo] = useState('');
+  const [sendingOtp, setSendingOtp] = useState(false);
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -54,27 +64,101 @@ export default function ResetPasswordPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
+  const sendOtps = async (token: string) => {
+    setSendingOtp(true);
+    setError('');
+    try {
+      const res = await fetch('/api/auth/recovery/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.error || 'Could not send verification codes.');
+      }
+      const nextChannels = Array.isArray(json.channels) ? json.channels : ['email'];
+      setChannels(nextChannels);
+      setEmailHint(json.emailHint || '');
+      setPhoneHint(json.phoneHint || null);
+      setOtpInfo(
+        json.message ||
+          (nextChannels.includes('sms')
+            ? 'We sent a code to your email and phone.'
+            : 'We sent a code to your email.'),
+      );
+    } catch (err: any) {
+      setError(err?.message || 'Could not send verification codes.');
+    } finally {
+      setSendingOtp(false);
+    }
+  };
+
   // Email links: /auth/reset-password#access_token=<token>&type=recovery
-  // We stash the raw recovery token and set the password via a dedicated API
-  // so a leftover login session can never force "current password required".
   useEffect(() => {
     const { token, type } = readRecoveryParams();
+    const readyToken =
+      token && (type === 'recovery' || !type) ? token : readStashedRecoveryToken();
+
     if (token && (type === 'recovery' || !type)) {
       stashRecoveryToken(token);
       window.history.replaceState(null, '', window.location.pathname);
-      setLinkReady(true);
-      // Best-effort: also mint a recovery session for other auth listeners.
       void supabase.auth.verifyOtp({ type: 'recovery', token_hash: token }).catch(() => {});
+    }
+
+    if (!readyToken) {
+      setLinkReady(false);
       return;
     }
-    if (readStashedRecoveryToken()) {
-      setLinkReady(true);
-      return;
-    }
-    setLinkReady(false);
+
+    setLinkReady(true);
+    void sendOtps(readyToken);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    const token = readStashedRecoveryToken();
+    if (!token) {
+      setError('Reset link is missing or expired. Please request a new one.');
+      setLinkReady(false);
+      return;
+    }
+    if (!/^\d{6}$/.test(emailOtp.replace(/\D/g, ''))) {
+      setError('Enter the 6-digit code from your email.');
+      return;
+    }
+    if (channels.includes('sms') && !/^\d{6}$/.test(smsOtp.replace(/\D/g, ''))) {
+      setError('Enter the 6-digit code from your SMS.');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/auth/recovery/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token,
+          email_otp: emailOtp.replace(/\D/g, ''),
+          sms_otp: smsOtp.replace(/\D/g, ''),
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.error || 'Invalid or expired code.');
+      }
+      setStep('password');
+      setError('');
+    } catch (err: any) {
+      setError(err?.message || 'Invalid or expired code.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSubmitPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
@@ -103,11 +187,13 @@ export default function ResetPasswordPage() {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json?.success) {
+        if (json?.code === 'otp_required') {
+          setStep('otp');
+        }
         throw new Error(json?.error || 'Failed to update password.');
       }
 
       clearStashedRecoveryToken();
-      // Drop any leftover session so they sign in fresh with the new password.
       try {
         await supabase.auth.signOut({ scope: 'local' });
       } catch { /* ignore */ }
@@ -176,9 +262,15 @@ export default function ResetPasswordPage() {
     <main className="min-h-screen bg-gray-50 flex items-center justify-center py-12 px-4 sm:px-6">
       <div className="max-w-md w-full">
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">Set a new password</h1>
+          <h1 className="text-4xl font-bold text-gray-900 mb-2">
+            {step === 'otp' ? "Verify it's you" : 'Set a new password'}
+          </h1>
           <p className="text-gray-600">
-            Choose a strong password to secure your account. Your old password is not required.
+            {step === 'otp'
+              ? channels.includes('sms')
+                ? 'Enter the codes we sent to your email and phone before choosing a new password.'
+                : 'Enter the code we sent to your email before choosing a new password.'
+              : 'Choose a strong password to secure your account. Your old password is not required.'}
           </p>
         </div>
 
@@ -189,59 +281,133 @@ export default function ResetPasswordPage() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label className="block text-sm font-semibold text-gray-900 mb-2">New Password</label>
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-3 pr-12 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-gold-500 focus:border-gold-500"
-                  placeholder="At least 6 characters"
-                  autoComplete="new-password"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                >
-                  <i className={`${showPassword ? 'ri-eye-off-line' : 'ri-eye-line'} text-xl`}></i>
-                </button>
-              </div>
-            </div>
+          {step === 'otp' ? (
+            <form onSubmit={handleVerifyOtp} className="space-y-6">
+              {otpInfo && (
+                <p className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                  {otpInfo}
+                </p>
+              )}
 
-            <div>
-              <label className="block text-sm font-semibold text-gray-900 mb-2">Confirm Password</label>
-              <div className="relative">
+              <div>
+                <label className="block text-sm font-semibold text-gray-900 mb-2">
+                  Email code {emailHint ? <span className="font-normal text-gray-500">({emailHint})</span> : null}
+                </label>
                 <input
-                  type={showConfirm ? 'text' : 'password'}
-                  value={confirm}
-                  onChange={(e) => setConfirm(e.target.value)}
-                  className="w-full px-4 py-3 pr-12 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-gold-500 focus:border-gold-500"
-                  placeholder="Re-enter password"
-                  autoComplete="new-password"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  value={emailOtp}
+                  onChange={(e) => setEmailOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-center text-2xl tracking-[0.4em] font-semibold focus:ring-2 focus:ring-gold-500 focus:border-gold-500"
+                  placeholder="••••••"
+                  autoFocus
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowConfirm(!showConfirm)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  aria-label={showConfirm ? 'Hide password' : 'Show password'}
-                >
-                  <i className={`${showConfirm ? 'ri-eye-off-line' : 'ri-eye-line'} text-xl`}></i>
-                </button>
               </div>
-            </div>
 
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full bg-gold-600 hover:bg-gold-700 text-white py-4 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap cursor-pointer"
-            >
-              {isLoading ? 'Updating…' : 'Update password'}
-            </button>
-          </form>
+              {channels.includes('sms') && (
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-2">
+                    SMS code {phoneHint ? <span className="font-normal text-gray-500">({phoneHint})</span> : null}
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    value={smsOtp}
+                    onChange={(e) => setSmsOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-center text-2xl tracking-[0.4em] font-semibold focus:ring-2 focus:ring-gold-500 focus:border-gold-500"
+                    placeholder="••••••"
+                  />
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={
+                  isLoading ||
+                  emailOtp.length !== 6 ||
+                  (channels.includes('sms') && smsOtp.length !== 6)
+                }
+                className="w-full bg-gold-600 hover:bg-gold-700 text-white py-4 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                {isLoading ? 'Verifying…' : 'Continue'}
+              </button>
+
+              <button
+                type="button"
+                disabled={sendingOtp}
+                onClick={() => {
+                  const token = readStashedRecoveryToken();
+                  if (token) void sendOtps(token);
+                }}
+                className="w-full py-2 text-sm font-semibold text-gold-600 hover:text-gold-700 disabled:opacity-50 cursor-pointer"
+              >
+                {sendingOtp ? 'Sending…' : 'Resend codes'}
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleSubmitPassword} className="space-y-6">
+              <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-sm text-emerald-800 flex items-center gap-2">
+                <i className="ri-shield-check-line"></i>
+                Identity verified — set your new password below.
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-900 mb-2">New Password</label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full px-4 py-3 pr-12 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-gold-500 focus:border-gold-500"
+                    placeholder="At least 6 characters"
+                    autoComplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    <i className={`${showPassword ? 'ri-eye-off-line' : 'ri-eye-line'} text-xl`}></i>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-900 mb-2">Confirm Password</label>
+                <div className="relative">
+                  <input
+                    type={showConfirm ? 'text' : 'password'}
+                    value={confirm}
+                    onChange={(e) => setConfirm(e.target.value)}
+                    className="w-full px-4 py-3 pr-12 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-gold-500 focus:border-gold-500"
+                    placeholder="Re-enter password"
+                    autoComplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirm(!showConfirm)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    aria-label={showConfirm ? 'Hide password' : 'Show password'}
+                  >
+                    <i className={`${showConfirm ? 'ri-eye-off-line' : 'ri-eye-line'} text-xl`}></i>
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="w-full bg-gold-600 hover:bg-gold-700 text-white py-4 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap cursor-pointer"
+              >
+                {isLoading ? 'Updating…' : 'Update password'}
+              </button>
+            </form>
+          )}
         </div>
 
         <div className="mt-8 text-center">
