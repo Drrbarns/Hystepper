@@ -8,7 +8,33 @@ import { useRouter } from 'next/navigation';
 import LazyImage from '@/components/LazyImage';
 
 type VariantMode = 'size_only' | 'size_color' | 'color_only';
+/** Chip buttons shown in the variant builder (includes 36 and 42). */
 const PRESET_SHOE_SIZES = ['36', '37', '38', '39', '40', '41', '42', '43', '44', '45'];
+/** One-click default range for Hy_stepper footwear. */
+const QUICK_SELECT_SIZES = ['36', '37', '38', '39', '40', '41', '42'];
+
+function parseSizeList(sizesStr: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of String(sizesStr || '').split(/[,|\n]+/)) {
+    const s = raw.trim();
+    if (!s) continue;
+    const key = s.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(s);
+  }
+  return out.sort((a, b) => {
+    const na = Number(a);
+    const nb = Number(b);
+    if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
+    return a.localeCompare(b);
+  });
+}
+
+function serializeSizeList(sizes: string[]): string {
+  return parseSizeList(sizes.join(',')).join(', ');
+}
 
 // Normalise free-text or auto-derived slugs into a safe URL segment.
 function slugify(input: string): string {
@@ -68,7 +94,7 @@ function mergeBuilderVariants(
   colors: { id: string; name: string; hex: string; image_url: string | null }[],
   basePrice: number
 ): any[] {
-  const sizes = [...new Set(sizesStr.split(',').map(s => s.trim()).filter(Boolean))];
+  const sizes = parseSizeList(sizesStr);
   const activeColors = colors.filter(c => c.name.trim());
 
   const norm = (s: any) => String(s ?? '').trim().toLowerCase();
@@ -280,16 +306,22 @@ export default function ProductEditor({ productId }: { productId: string }) {
 
         if (product.product_variants && product.product_variants.length > 0) {
           const pvs = product.product_variants;
-          setVariants(pvs.map((v: any) => ({
-            ...v,
-            _appearanceMode: v.image_url ? 'image' : 'color',
-            _size: v.name?.includes(' / ') ? v.name.split(' / ')[0] : (v.option2 ? null : v.name),
-            _color: v.option2 || null,
-            _disabled: false,
-          })));
+          setVariants(pvs.map((v: any) => {
+            const fromOpt = String(v.option1 || '').trim();
+            const fromName = v.name?.includes(' / ')
+              ? v.name.split(' / ')[0].trim()
+              : (v.option2 ? '' : String(v.name || '').trim());
+            return {
+              ...v,
+              _appearanceMode: v.image_url ? 'image' : 'color',
+              _size: fromOpt || fromName || null,
+              _color: v.option2 || null,
+              _disabled: false,
+            };
+          }));
 
           // Reconstruct builder state from existing variants
-          const hasCombo = pvs.some((v: any) => v.name?.includes(' / '));
+          const hasCombo = pvs.some((v: any) => v.name?.includes(' / ') || (v.option1 && v.option2));
           const hasColors = pvs.some((v: any) => v.option2);
 
           if (hasCombo) {
@@ -299,7 +331,7 @@ export default function ProductEditor({ productId }: { productId: string }) {
               if (fromOpt) return fromOpt;
               return v.name?.includes(' / ') ? v.name.split(' / ')[0].trim() : '';
             }).filter(Boolean))] as string[];
-            setBuilderSizes(sizes.sort((a, b) => Number(a) - Number(b) || a.localeCompare(b)).join(', '));
+            setBuilderSizes(serializeSizeList(sizes));
             const colorMap = new Map<string, { id: string; name: string; hex: string; image_url: string | null }>();
             pvs.forEach((v: any) => {
               if (v.option2 && !colorMap.has(v.option2)) {
@@ -318,8 +350,10 @@ export default function ProductEditor({ productId }: { productId: string }) {
             setBuilderColors([...colorMap.values()]);
           } else {
             setVariantMode('size_only');
-            const sizes = pvs.map((v: any) => v.name).filter(Boolean) as string[];
-            setBuilderSizes(sizes.join(', '));
+            const sizes = pvs.map((v: any) =>
+              String(v.option1 || v.name || '').trim()
+            ).filter(Boolean) as string[];
+            setBuilderSizes(serializeSizeList(sizes));
           }
         }
       }
@@ -353,6 +387,7 @@ export default function ProductEditor({ productId }: { productId: string }) {
         updated.option2 = patch.name;
         updated._color = patch.name;
         updated.name = v._size ? `${v._size} / ${patch.name}` : patch.name;
+        updated.option1 = v._size || v.option1 || null;
       }
       updated.image_url = next.image_url || null;
       updated.option3 = next.image_url ? null : (next.hex || null);
@@ -361,8 +396,76 @@ export default function ProductEditor({ productId }: { productId: string }) {
     }));
   }
 
+  /** Rebuild the variants table from the size/color builder (preserves stock/price). */
+  function syncVariantsFromBuilder(
+    nextSizesStr: string = builderSizes,
+    nextColors = builderColors,
+    nextMode: VariantMode = variantMode,
+    opts?: { silent?: boolean },
+  ) {
+    const sizes = parseSizeList(nextSizesStr);
+    const colors = nextColors.filter(c => c.name.trim());
+    const basePrice = parseFloat(price) || 0;
+
+    if (nextMode === 'size_only' && sizes.length === 0) {
+      setVariants([]);
+      return;
+    }
+    if (nextMode === 'color_only' && colors.length === 0) {
+      setVariants([]);
+      return;
+    }
+    if (nextMode === 'size_color' && (sizes.length === 0 || colors.length === 0)) {
+      // Keep existing rows until both axes are filled — don't wipe the table.
+      if (!opts?.silent && sizes.length > 0 && colors.length === 0) {
+        toast.message('Sizes selected', {
+          description: 'Add at least one color — combinations appear automatically.',
+        });
+      }
+      return;
+    }
+
+    // Functional update so rapid size-chip clicks don't drop earlier sizes.
+    let next: any[] = [];
+    setVariants((prev) => {
+      next = mergeBuilderVariants(
+        prev,
+        nextMode,
+        serializeSizeList(sizes),
+        nextColors,
+        basePrice,
+      );
+      return next;
+    });
+    setBulkPrice('');
+    setBulkStock('');
+    if (!opts?.silent) {
+      const active = next.filter(v => !v._disabled).length;
+      toast.success(`Variants updated (${active})`, {
+        description: sizes.length ? `Sizes: ${sizes.join(', ')}` : undefined,
+      });
+    }
+  }
+
+  function setSizesAndSync(nextSizes: string[] | string, opts?: { silent?: boolean }) {
+    const normalized = serializeSizeList(
+      Array.isArray(nextSizes) ? nextSizes : parseSizeList(nextSizes),
+    );
+    setBuilderSizes(normalized);
+    syncVariantsFromBuilder(normalized, builderColors, variantMode, opts);
+  }
+
+  function togglePresetSize(size: string) {
+    const current = parseSizeList(builderSizes);
+    const exists = current.some(s => s.toLowerCase() === size.toLowerCase());
+    const next = exists
+      ? current.filter(s => s.toLowerCase() !== size.toLowerCase())
+      : [...current, size];
+    setSizesAndSync(next);
+  }
+
   function generateVariants() {
-    const sizes = [...new Set(builderSizes.split(',').map(s => s.trim()).filter(Boolean))];
+    const sizes = parseSizeList(builderSizes);
     const colors = builderColors.filter(c => c.name.trim());
 
     if (variantMode === 'size_only' && sizes.length === 0) {
@@ -378,82 +481,7 @@ export default function ProductEditor({ productId }: { productId: string }) {
       return;
     }
 
-    const basePrice = parseFloat(price) || 0;
-    const combinations: any[] = [];
-
-    // Preserve existing price / stock / DB id for combinations that already
-    // exist, so regenerating never wipes the admin's data.
-    const existingByName = new Map<string, any>(variants.map(v => [v.name, v]));
-    const carryOver = (name: string, fresh: any) => {
-      const prev = existingByName.get(name);
-      if (!prev) return fresh;
-      return {
-        ...fresh,
-        id: prev.id,
-        price: prev.price ?? fresh.price,
-        quantity: prev.quantity ?? fresh.quantity,
-        sku: prev.sku,
-        _disabled: prev._disabled || false,
-      };
-    };
-
-    if (variantMode === 'size_color') {
-      for (const size of sizes) {
-        for (const color of colors) {
-          const name = `${size} / ${color.name}`;
-          combinations.push(carryOver(name, {
-            id: `temp-${Date.now()}-${Math.random()}`,
-            name,
-            option1: size,
-            option2: color.name,
-            option3: color.image_url ? null : (color.hex || null),
-            image_url: color.image_url || null,
-            price: basePrice,
-            quantity: 0,
-            _size: size,
-            _color: color.name,
-            _disabled: false,
-            _appearanceMode: color.image_url ? 'image' : 'color',
-          }));
-        }
-      }
-    } else if (variantMode === 'size_only') {
-      for (const size of sizes) {
-        combinations.push(carryOver(size, {
-          id: `temp-${Date.now()}-${Math.random()}`,
-          name: size,
-          option1: size,
-          option2: null,
-          option3: null,
-          image_url: null,
-          price: basePrice,
-          quantity: 0,
-          _size: size,
-          _disabled: false,
-          _appearanceMode: 'color',
-        }));
-      }
-    } else {
-      for (const color of colors) {
-        combinations.push(carryOver(color.name, {
-          id: `temp-${Date.now()}-${Math.random()}`,
-          name: color.name,
-          option2: color.name,
-          option3: color.image_url ? null : (color.hex || null),
-          image_url: color.image_url || null,
-          price: basePrice,
-          quantity: 0,
-          _color: color.name,
-          _disabled: false,
-          _appearanceMode: color.image_url ? 'image' : 'color',
-        }));
-      }
-    }
-
-    setVariants(combinations);
-    setBulkPrice('');
-    setBulkStock('');
-    toast.success(`Generated ${combinations.length} variant${combinations.length !== 1 ? 's' : ''} — existing prices & stock kept`);
+    syncVariantsFromBuilder(builderSizes, builderColors, variantMode);
   }
 
   // Lazy-load stock history the first time the tab is opened.
@@ -673,12 +701,34 @@ export default function ProductEditor({ productId }: { productId: string }) {
         }
       }
 
-      // 3. Upsert variants
-      if (variantsToUpsert.length > 0) {
-        const { error: variantError } = await supabase.from('product_variants').upsert(variantsToUpsert);
-        if (variantError) {
-          console.error('Variant save error:', variantError);
-          toast.error(`Product saved, but variants failed: ${variantError.message}`);
+      // 3. Persist variants — update existing rows, INSERT new sizes (36/42 etc.)
+      // separately so a partial upsert can't silently drop brand-new combinations.
+      const toUpdate = variantsToUpsert.filter(v => v.id);
+      const toInsert = variantsToUpsert.filter(v => !v.id);
+      let variantSaveFailed = false;
+
+      if (toUpdate.length > 0) {
+        const { error: updateErr } = await supabase.from('product_variants').upsert(toUpdate);
+        if (updateErr) {
+          console.error('Variant update error:', updateErr);
+          toast.error(`Could not update variants: ${updateErr.message}`);
+          variantSaveFailed = true;
+        }
+      }
+      if (toInsert.length > 0) {
+        const { data: inserted, error: insertErr } = await supabase
+          .from('product_variants')
+          .insert(toInsert)
+          .select('id, name, option1');
+        if (insertErr) {
+          console.error('Variant insert error:', insertErr);
+          toast.error(`Could not add new sizes/variants: ${insertErr.message}`);
+          variantSaveFailed = true;
+        } else {
+          const addedSizes = [...new Set((inserted || []).map((r: any) => r.option1 || r.name).filter(Boolean))];
+          if (addedSizes.length) {
+            toast.success(`Added new variants`, { description: `Sizes: ${addedSizes.join(', ')}` });
+          }
         }
       }
 
@@ -706,10 +756,40 @@ export default function ProductEditor({ productId }: { productId: string }) {
         }
       }
 
-      toast.success(productId === 'new' ? 'Product created!' : 'Product updated successfully');
+      // Verify sizes actually landed in the DB (especially 36 / 42).
+      const expectedSizes = parseSizeList(builderSizes);
+      if (!variantSaveFailed && expectedSizes.length > 0 && variantMode !== 'color_only') {
+        const { data: savedRows } = await supabase
+          .from('product_variants')
+          .select('option1, name')
+          .eq('product_id', targetId);
+        const savedSizeSet = new Set(
+          (savedRows || []).map((r: any) => {
+            const o1 = String(r.option1 || '').trim();
+            if (o1) return o1;
+            const n = String(r.name || '');
+            return n.includes(' / ') ? n.split(' / ')[0].trim() : n.trim();
+          }).filter(Boolean),
+        );
+        const missing = expectedSizes.filter(s => !savedSizeSet.has(s));
+        if (missing.length > 0) {
+          toast.error(`These sizes did not save: ${missing.join(', ')}. Try Save again.`);
+        } else {
+          toast.success(
+            productId === 'new' ? 'Product created!' : 'Product updated successfully',
+            { description: `Sizes saved: ${expectedSizes.join(', ')}` },
+          );
+        }
+      } else if (!variantSaveFailed) {
+        toast.success(productId === 'new' ? 'Product created!' : 'Product updated successfully');
+      }
 
-      // Redirect to products list
-      router.push('/admin/products');
+      // New products → list. Edits stay on the page so you can confirm 36/42 stuck.
+      if (productId === 'new') {
+        router.push('/admin/products');
+      } else {
+        await fetchInitialData();
+      }
 
     } catch (err: any) {
       console.error('Error saving product:', err);
@@ -1181,21 +1261,21 @@ export default function ProductEditor({ productId }: { productId: string }) {
                     <span className="text-xs bg-gray-200 text-gray-500 px-2 py-0.5 rounded-full">required</span>
                   </div>
 
-                  {/* Preset shoe sizes */}
+                  {/* Preset shoe sizes — click applies immediately to the variants table */}
                   <div className="mb-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="text-xs text-gray-500">Quick select:</p>
+                    <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
+                      <p className="text-xs text-gray-500">Click a size to add/remove (includes 36 &amp; 42):</p>
                       <div className="flex items-center gap-3">
                         <button
                           type="button"
-                          onClick={() => setBuilderSizes(PRESET_SHOE_SIZES.slice(0, 7).join(', '))}
+                          onClick={() => setSizesAndSync(QUICK_SELECT_SIZES)}
                           className="text-xs text-emerald-700 hover:text-emerald-800 font-medium cursor-pointer"
                         >
-                          Use 36-42
+                          Use 36–42
                         </button>
                         <button
                           type="button"
-                          onClick={() => setBuilderSizes('')}
+                          onClick={() => setSizesAndSync([])}
                           className="text-xs text-gray-500 hover:text-gray-700 font-medium cursor-pointer"
                         >
                           Clear
@@ -1204,28 +1284,18 @@ export default function ProductEditor({ productId }: { productId: string }) {
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {PRESET_SHOE_SIZES.map(size => {
-                        const currentSizes = builderSizes.split(',').map(s => s.trim()).filter(Boolean);
-                        const isActive = currentSizes.includes(size);
+                        const currentSizes = parseSizeList(builderSizes);
+                        const isActive = currentSizes.some(s => s.toLowerCase() === size.toLowerCase());
                         return (
                           <button
                             key={size}
                             type="button"
-                            onClick={() => {
-                              if (isActive) {
-                                setBuilderSizes(currentSizes.filter(s => s !== size).join(', '));
-                              } else {
-                                const numericSizes = [...currentSizes, size].sort((a, b) => {
-                                  const na = Number(a), nb = Number(b);
-                                  if (!isNaN(na) && !isNaN(nb)) return na - nb;
-                                  return a.localeCompare(b);
-                                });
-                                setBuilderSizes(numericSizes.join(', '));
-                              }
-                            }}
-                            className={`w-10 h-10 rounded-lg border-2 text-sm font-semibold transition-all cursor-pointer ${
+                            aria-pressed={isActive}
+                            onClick={() => togglePresetSize(size)}
+                            className={`min-w-[2.75rem] h-11 px-2 rounded-lg border-2 text-sm font-bold transition-all cursor-pointer ${
                               isActive
                                 ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
-                                : 'border-gray-200 bg-white text-gray-600 hover:border-emerald-300 hover:text-emerald-600'
+                                : 'border-gray-200 bg-white text-gray-700 hover:border-emerald-400 hover:text-emerald-700'
                             }`}
                           >
                             {size}
@@ -1239,14 +1309,17 @@ export default function ProductEditor({ productId }: { productId: string }) {
                     type="text"
                     value={builderSizes}
                     onChange={e => setBuilderSizes(e.target.value)}
-                    placeholder="Type custom sizes not in presets (e.g. 46, 47, XL)"
+                    onBlur={() => setSizesAndSync(builderSizes, { silent: true })}
+                    placeholder="Or type custom sizes (e.g. 46, 47, XL)"
                     className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400 bg-white text-sm"
                   />
-                  <p className="text-xs text-gray-400 mt-2">Click buttons to add/remove. Separate custom values with commas.</p>
+                  <p className="text-xs text-gray-400 mt-2">
+                    Selected sizes update the variant list immediately — then click Save.
+                  </p>
                   {builderSizes.trim() && (
                     <div className="flex flex-wrap gap-1.5 mt-3">
-                      {builderSizes.split(',').map(s => s.trim()).filter(Boolean).map((s, i) => (
-                        <span key={i} className="px-2.5 py-1 bg-white border border-emerald-200 text-emerald-800 rounded-lg text-xs font-medium">{s}</span>
+                      {parseSizeList(builderSizes).map((s) => (
+                        <span key={s} className="px-2.5 py-1 bg-white border border-emerald-200 text-emerald-800 rounded-lg text-xs font-medium">{s}</span>
                       ))}
                     </div>
                   )}
@@ -1283,6 +1356,14 @@ export default function ProductEditor({ productId }: { productId: string }) {
                         )}
                         <input type="text" value={color.name}
                           onChange={e => updateBuilderColor(ci, { name: e.target.value })}
+                          onBlur={(e) => {
+                            // After naming a color, expand size×color rows (incl. 36/42).
+                            const name = e.target.value.trim();
+                            const nextColors = builderColors.map((c, i) => (i === ci ? { ...c, name } : c));
+                            if (variantMode === 'size_color' && parseSizeList(builderSizes).length > 0 && name) {
+                              syncVariantsFromBuilder(builderSizes, nextColors, variantMode, { silent: true });
+                            }
+                          }}
                           placeholder="Color name (e.g. Black)"
                           className="flex-1 min-w-0 px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400" />
                         <label className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 cursor-pointer hover:bg-purple-50 hover:border-purple-300 transition-colors shrink-0" title="Upload image instead of color">
@@ -1506,9 +1587,10 @@ export default function ProductEditor({ productId }: { productId: string }) {
                         setVariants(variants.filter((_, i) => i !== index));
                         // Keep the size builder in sync so save-reconcile doesn't re-add it.
                         if (variantMode === 'size_only') {
-                          const removedSize = v._size || v.name;
-                          setBuilderSizes(prev =>
-                            prev.split(',').map(s => s.trim()).filter(Boolean).filter(s => s !== removedSize).join(', ')
+                          const removedSize = String(v._size || v.name || '').trim();
+                          setSizesAndSync(
+                            parseSizeList(builderSizes).filter(s => s.toLowerCase() !== removedSize.toLowerCase()),
+                            { silent: true },
                           );
                         }
                       }

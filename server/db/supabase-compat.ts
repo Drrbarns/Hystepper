@@ -672,30 +672,69 @@ class QueryBuilder implements PromiseLike<{ data: any; error: any; count: number
   private async execInsert(pool: ReturnType<typeof getPool>): Promise<Row[]> {
     const rowsIn = Array.isArray(this.payload) ? this.payload : [this.payload!];
     if (rowsIn.length === 0) return [];
+
+    // Mixed upsert batches (some rows with id, some without) used to coalesce
+    // columns across the whole payload, then send id=NULL for new rows — which
+    // fails the NOT NULL primary key and aborts the entire batch. That is why
+    // admins could not add sizes 36/42 to products that already had variants.
+    if (this.action === "upsert") {
+      const withId = rowsIn.filter((r) => r.id != null && r.id !== "");
+      const withoutId = rowsIn.filter((r) => r.id == null || r.id === "");
+      const out: Row[] = [];
+      if (withId.length > 0) {
+        out.push(...(await this.execInsertRows(pool, withId, true)));
+      }
+      if (withoutId.length > 0) {
+        out.push(...(await this.execInsertRows(pool, withoutId, false)));
+      }
+      return out;
+    }
+
+    return this.execInsertRows(pool, rowsIn, false);
+  }
+
+  private async execInsertRows(
+    pool: ReturnType<typeof getPool>,
+    rowsIn: Row[],
+    asUpsert: boolean
+  ): Promise<Row[]> {
+    if (rowsIn.length === 0) return [];
+    // Only include keys that are actually present (skip undefined).
     const cols = Array.from(
       rowsIn.reduce<Set<string>>((set, r) => {
-        Object.keys(r).forEach((k) => set.add(k));
+        Object.keys(r).forEach((k) => {
+          if (r[k] !== undefined) set.add(k);
+        });
         return set;
       }, new Set())
     );
+
+    // Plain insert: omit id so Postgres default uuid_generate_v4() runs,
+    // unless every row already supplies an id.
+    const allHaveId = rowsIn.every((r) => r.id != null && r.id !== "");
+    const insertCols = !asUpsert && !allHaveId ? cols.filter((c) => c !== "id") : cols;
+
+    if (insertCols.length === 0) return [];
+
     const params: any[] = [];
     const valuesSql = rowsIn
       .map((r) => {
-        const ph = cols.map((c) => {
+        const ph = insertCols.map((c) => {
           params.push(normalizeValue(r[c], this.table, c));
           return `$${params.length}`;
         });
         return `(${ph.join(",")})`;
       })
       .join(", ");
-    const colSql = cols.map(ident).join(", ");
+    const colSql = insertCols.map(ident).join(", ");
     let sql = `INSERT INTO ${ident(this.table)} (${colSql}) VALUES ${valuesSql}`;
-    if (this.action === "upsert") {
+    if (asUpsert) {
       const conflict = this.onConflictCols?.length
         ? this.onConflictCols.map(ident).join(", ")
         : "id";
-      const updates = cols
-        .filter((c) => !(this.onConflictCols || ["id"]).includes(c))
+      const conflictCols = this.onConflictCols || ["id"];
+      const updates = insertCols
+        .filter((c) => !conflictCols.includes(c))
         .map((c) => `${ident(c)} = EXCLUDED.${ident(c)}`);
       sql += ` ON CONFLICT (${conflict}) DO ${
         updates.length ? `UPDATE SET ${updates.join(", ")}` : "NOTHING"
