@@ -62,10 +62,35 @@ function resolveVariantSizeColor(item: any): { size: string; color: string } {
   return { size: '', color: '' };
 }
 
-function isConfirmedOrder(order: any): boolean {
+function orderMeta(order: any): Record<string, unknown> {
+  return (order?.metadata || {}) as Record<string, unknown>;
+}
+
+function isPosOrder(order: any): boolean {
+  return orderMeta(order).pos_sale === true || order?.payment_provider === 'pos';
+}
+
+/** Walk-in POS — customer already left with the shoes. */
+function isPosWalkIn(order: any): boolean {
+  if (!isPosOrder(order)) return false;
+  return orderMeta(order).pos_order_type !== 'delivery';
+}
+
+/** Website + POS delivery + pay-on-delivery sales that still need picking. */
+function isPackableOrder(order: any): boolean {
+  if (['cancelled', 'refunded', 'returned'].includes(order?.status)) return false;
   if (order?.payment_status === 'paid') return true;
-  const meta = (order?.metadata || {}) as Record<string, unknown>;
-  return meta.pos_sale === true;
+  if (isPosOrder(order)) return true;
+  if (order?.payment_method === 'pay_on_delivery') return true;
+  if (orderMeta(order).pay_on_delivery === true) return true;
+  return false;
+}
+
+function needsWarehousePick(order: any): boolean {
+  if (!isPackableOrder(order)) return false;
+  // POS walk-in is completed at the till — nothing to pull from shelf.
+  if (isPosWalkIn(order) && order.status === 'delivered') return false;
+  return ['pending', 'processing', 'shipped'].includes(order.status);
 }
 
 function startOfPeriod(period: Period): string | null {
@@ -135,7 +160,7 @@ function buildPrintHtml(groups: CodeGroup[], periodLabel: string): string {
 }
 
 export default function PackingList() {
-  const [period, setPeriod] = useState<Period>('today');
+  const [period, setPeriod] = useState<Period>('all');
   const [includeShipped, setIncludeShipped] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -158,7 +183,7 @@ export default function PackingList() {
           products ( product_code, sku, style_name, name ),
           variant:product_variants ( name, option1, option2, sku ),
           orders!inner (
-            id, order_number, status, payment_status, created_at, metadata
+            id, order_number, status, payment_status, payment_method, payment_provider, created_at, metadata
           )
         `)
         .or('status.eq.active,status.is.null')
@@ -182,7 +207,7 @@ export default function PackingList() {
 
       for (const item of data || []) {
         const order = (item as any).orders;
-        if (!order || !isConfirmedOrder(order)) continue;
+        if (!order || !needsWarehousePick(order)) continue;
         if (item.status && item.status !== 'active') continue;
 
         const product = (item as any).products || {};
@@ -340,8 +365,10 @@ export default function PackingList() {
           Packing List
         </p>
         <p>
-          Confirmed orders grouped by <strong>product code → color → size</strong> so you can pull
-          everything for one style from the shelf in one trip.
+          Pull list for the warehouse: <strong>website orders</strong> and{' '}
+          <strong>POS delivery orders</strong>, grouped by product code → color → size.
+          Tap a code to expand and see how many pairs of each color/size to pack.
+          POS walk-in sales are excluded — the customer already took those at the till.
         </p>
       </div>
 
@@ -443,8 +470,17 @@ export default function PackingList() {
         ) : filtered.length === 0 ? (
           <div className="p-12 text-center text-gray-500">
             <i className="ri-inbox-line text-3xl text-gray-300"></i>
-            <p className="mt-2 font-medium text-gray-700">Nothing to pack</p>
-            <p className="text-sm mt-1">No confirmed open orders match this filter.</p>
+            <p className="mt-2 font-medium text-gray-700">Nothing to pack right now</p>
+            <p className="text-sm mt-2 max-w-md mx-auto">
+              When orders need picking, you&apos;ll see rows like{' '}
+              <strong className="text-gray-800">111</strong> → Black 40 (10 pairs), Black 38 (2 pairs).
+              Includes website orders and POS deliveries still in Pending / Processing / Shipped.
+            </p>
+            {period === 'today' && (
+              <p className="text-sm mt-2 text-violet-700">
+                No packable orders placed today — try <strong>All open</strong> or <strong>7 days</strong>.
+              </p>
+            )}
           </div>
         ) : (
           <AdminTableScroll>
