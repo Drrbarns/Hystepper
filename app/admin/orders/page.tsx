@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import ProductSalesStats from './ProductSalesStats';
+import PackingList from './PackingList';
 import AdminTableScroll from '@/components/admin/AdminTableScroll';
 
 interface Order {
@@ -306,7 +307,14 @@ const RECEIPT_ITEMS_SELECT = `
 export default function AdminOrdersPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [orderViewTab, setOrderViewTab] = useState<'confirmed' | 'abandoned' | 'receipts'>('confirmed');
+  const [orderViewTab, setOrderViewTab] = useState<'confirmed' | 'abandoned' | 'receipts' | 'packing'>('confirmed');
+
+  useEffect(() => {
+    const tab = new URLSearchParams(window.location.search).get('tab');
+    if (tab === 'packing' || tab === 'abandoned' || tab === 'receipts' || tab === 'confirmed') {
+      setOrderViewTab(tab);
+    }
+  }, []);
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [showFilters, setShowFilters] = useState(false);
   const [sortBy, setSortBy] = useState('date');
@@ -373,6 +381,7 @@ export default function AdminOrdersPage() {
   };
 
   useEffect(() => {
+    if (orderViewTab === 'packing') return;
     const sourceOrders = orderViewTab === 'confirmed'
       ? orders.filter(isConfirmedOrder)
       : orderViewTab === 'abandoned'
@@ -752,6 +761,7 @@ export default function AdminOrdersPage() {
   };
 
   const tabOrders = orders.filter((order) => {
+    if (orderViewTab === 'packing') return false;
     if (orderViewTab === 'receipts') return true; // every order has a receipt
     const confirmed = isConfirmedOrder(order);
     return orderViewTab === 'confirmed' ? confirmed : !confirmed;
@@ -950,7 +960,19 @@ export default function AdminOrdersPage() {
           <i className="ri-receipt-line mr-1"></i>
           Receipts ({orders.length})
         </button>
+        <button
+          onClick={() => setOrderViewTab('packing')}
+          className={`pb-3 text-sm font-semibold border-b-2 transition-colors cursor-pointer ${orderViewTab === 'packing' ? 'text-violet-700 border-violet-600' : 'text-gray-500 border-transparent hover:text-gray-700'}`}
+        >
+          <i className="ri-box-3-line mr-1"></i>
+          Packing List
+        </button>
       </div>
+
+      {orderViewTab === 'packing' ? (
+        <PackingList />
+      ) : (
+      <>
 
       {orderViewTab === 'abandoned' ? (
         <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-amber-800 text-sm">
@@ -1280,6 +1302,8 @@ export default function AdminOrdersPage() {
           </div>
         )}
       </div>
+      </>
+      )}
 
       <ProductSalesStats isOpen={showProductStats} onClose={() => setShowProductStats(false)} />
 
