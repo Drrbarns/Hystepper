@@ -76,10 +76,16 @@ function isPosWalkIn(order: any): boolean {
   return orderMeta(order).pos_order_type !== 'delivery';
 }
 
-/** Website + POS delivery + pay-on-delivery sales that still need picking. */
+/**
+ * Real sales ready for the warehouse — not incomplete checkouts.
+ * In this shop, order status `pending` means payment never completed.
+ */
 function isPackableOrder(order: any): boolean {
-  if (['cancelled', 'refunded', 'returned'].includes(order?.status)) return false;
+  if (['cancelled', 'refunded', 'returned', 'pending', 'awaiting_payment'].includes(order?.status)) {
+    return false;
+  }
   if (order?.payment_status === 'paid') return true;
+  // POS delivery / pay-on-delivery: money collected later, but sale is real.
   if (isPosOrder(order)) return true;
   if (order?.payment_method === 'pay_on_delivery') return true;
   if (orderMeta(order).pay_on_delivery === true) return true;
@@ -90,7 +96,8 @@ function needsWarehousePick(order: any): boolean {
   if (!isPackableOrder(order)) return false;
   // POS walk-in is completed at the till — nothing to pull from shelf.
   if (isPosWalkIn(order) && order.status === 'delivered') return false;
-  return ['pending', 'processing', 'shipped'].includes(order.status);
+  // Never pack `pending` — that means checkout/payment did not complete.
+  return ['processing', 'shipped'].includes(order.status);
 }
 
 function startOfPeriod(period: Period): string | null {
@@ -172,9 +179,8 @@ export default function PackingList() {
     setLoading(true);
     setError('');
     try {
-      const statuses = includeShipped
-        ? ['pending', 'processing', 'shipped']
-        : ['pending', 'processing'];
+      // `pending` = unpaid / incomplete — never include on the packing list.
+      const statuses = includeShipped ? ['processing', 'shipped'] : ['processing'];
 
       let query = supabase
         .from('order_items')
@@ -365,10 +371,11 @@ export default function PackingList() {
           Packing List
         </p>
         <p>
-          Pull list for the warehouse: <strong>website orders</strong> and{' '}
-          <strong>POS delivery orders</strong>, grouped by product code → color → size.
-          Tap a code to expand and see how many pairs of each color/size to pack.
-          POS walk-in sales are excluded — the customer already took those at the till.
+          Pull list for paid / confirmed sales in <strong>Processing</strong>
+          {includeShipped ? ' or Shipped' : ''} — website and POS delivery.
+          Grouped by product code → color → size. Pending means payment did not
+          complete, so those never appear here. POS walk-in is excluded (already
+          handed over at the till).
         </p>
       </div>
 
@@ -474,7 +481,8 @@ export default function PackingList() {
             <p className="text-sm mt-2 max-w-md mx-auto">
               When orders need picking, you&apos;ll see rows like{' '}
               <strong className="text-gray-800">111</strong> → Black 40 (10 pairs), Black 38 (2 pairs).
-              Includes website orders and POS deliveries still in Pending / Processing / Shipped.
+              Includes website and POS delivery orders in Processing
+              {includeShipped ? ' / Shipped' : ''} — not Pending (unpaid).
             </p>
             {period === 'today' && (
               <p className="text-sm mt-2 text-violet-700">
