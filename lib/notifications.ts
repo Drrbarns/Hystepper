@@ -507,17 +507,24 @@ export async function sendOrderStatusUpdate(order: any, newStatus: string) {
         smsMessage = `Hi ${name}, order #${orderRef} status: ${newStatus}. Track: ${trackingUrl}`;
     }
 
-    const statusConfig: Record<string, { icon: string; color: string; bg: string }> = {
-        processing: { icon: '&#9881;', color: '#2563eb', bg: '#eff6ff' },
-        packaged: { icon: '&#128230;', color: '#047857', bg: '#ecfdf5' },
-        shipped: { icon: '&#128666;', color: '#047857', bg: '#ecfdf5' },
-        dispatched_to_rider: { icon: '&#128101;', color: '#4f46e5', bg: '#eef2ff' },
-        out_for_delivery: { icon: '&#128666;', color: '#4f46e5', bg: '#eef2ff' },
-        delivered: { icon: '&#127881;', color: '#16a34a', bg: '#f0fdf4' },
-        returned: { icon: '&#8617;', color: '#b45309', bg: '#fffbeb' },
-        cancelled: { icon: '&#10060;', color: '#dc2626', bg: '#fef2f2' },
+    const statusConfig: Record<string, { icon: string; color: string; bg: string; label: string }> = {
+        processing: { icon: '&#9881;', color: '#2563eb', bg: '#eff6ff', label: 'Processing' },
+        packed: { icon: '&#128230;', color: '#3730a3', bg: '#eef2ff', label: 'Packed' },
+        packaged: { icon: '&#128230;', color: '#3730a3', bg: '#eef2ff', label: 'Packed' },
+        packaging_for_delivery: { icon: '&#128230;', color: '#0369a1', bg: '#e0f2fe', label: 'Packaging for Delivery' },
+        shipped: { icon: '&#128666;', color: '#047857', bg: '#ecfdf5', label: 'Shipped' },
+        dispatched_to_rider: { icon: '&#128101;', color: '#4f46e5', bg: '#eef2ff', label: 'Out for Delivery' },
+        out_for_delivery: { icon: '&#128666;', color: '#4f46e5', bg: '#eef2ff', label: 'Out for Delivery' },
+        delivered: { icon: '&#127881;', color: '#16a34a', bg: '#f0fdf4', label: 'Delivered' },
+        returned: { icon: '&#8617;', color: '#b45309', bg: '#fffbeb', label: 'Returned' },
+        cancelled: { icon: '&#10060;', color: '#dc2626', bg: '#fef2f2', label: 'Cancelled' },
     };
-    const sc = statusConfig[newStatus] || { icon: '&#128276;', color: '#6b7280', bg: '#f9fafb' };
+    const sc = statusConfig[newStatus] || {
+        icon: '&#128276;',
+        color: '#6b7280',
+        bg: '#f9fafb',
+        label: newStatus.replace(/_/g, ' '),
+    };
 
     // Resolve the review URL once for the delivered status so SMS + email use
     // the same destination (single-product link when possible).
@@ -542,7 +549,7 @@ export async function sendOrderStatusUpdate(order: any, newStatus: string) {
 
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#faf8f3;border-radius:12px;overflow:hidden;margin:20px 0;">
   ${emailInfoRow('Order Number', `#${escapeHtml(String(orderRef))}`)}
-  ${emailInfoRow('New Status', `<span style="display:inline-block;background-color:${sc.bg};color:${sc.color};padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;text-transform:uppercase;">${escapeHtml(newStatus)}</span>`)}
+  ${emailInfoRow('New Status', `<span style="display:inline-block;background-color:${sc.bg};color:${sc.color};padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;text-transform:uppercase;">${escapeHtml(sc.label)}</span>`)}
   ${trackingNumber ? emailInfoRow('Tracking Number', escapeHtml(String(trackingNumber))) : ''}
 </table>
 
@@ -551,7 +558,7 @@ export async function sendOrderStatusUpdate(order: any, newStatus: string) {
 ${newStatus === 'delivered'
     ? emailButton('Leave a Review', reviewUrl)
     : emailButton('Track Your Order', trackingUrl)}
-`, `Your order #${orderRef} is now ${newStatus}`),
+`, `Your order #${orderRef} is now ${sc.label}`),
             });
             console.log(`[Status Update] Email sent for #${orderRef}`);
         } catch (err: any) {
