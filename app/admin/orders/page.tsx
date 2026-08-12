@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import ProductSalesStats from './ProductSalesStats';
 import PackingList from './PackingList';
 import AdminTableScroll from '@/components/admin/AdminTableScroll';
+import { ORDER_STATUS_COLORS, formatOrderStatus } from '@/lib/order-status';
 
 interface Order {
   id: string;
@@ -61,8 +62,7 @@ const escHtml = (s: any) =>
 
 const fmtMoneyR = (n: any) => `GH₵ ${Number(n || 0).toFixed(2)}`;
 
-const statusLabelR = (status: string) =>
-  status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Unknown';
+const statusLabelR = (status: string) => formatOrderStatus(status);
 
 const isPosReceipt = (order: any) =>
   order?.metadata?.pos_sale === true ||
@@ -324,10 +324,12 @@ export default function AdminOrdersPage() {
     { label: 'All Orders', count: 0, status: 'all' },
     { label: 'Pending', count: 0, status: 'pending' },
     { label: 'Processing', count: 0, status: 'processing' },
+    { label: 'Packed', count: 0, status: 'packed' },
+    { label: 'Packaging', count: 0, status: 'packaging_for_delivery' },
     { label: 'Shipped', count: 0, status: 'shipped' },
     { label: 'Delivered', count: 0, status: 'delivered' },
     { label: 'Returned', count: 0, status: 'returned' },
-    { label: 'Cancelled', count: 0, status: 'cancelled' }
+    { label: 'Cancelled', count: 0, status: 'cancelled' },
   ]);
   const [showProductStats, setShowProductStats] = useState(false);
   const [isRider, setIsRider] = useState(false);
@@ -391,10 +393,12 @@ export default function AdminOrdersPage() {
       { label: 'All Orders', count: sourceOrders.length, status: 'all' },
       { label: 'Pending', count: sourceOrders.filter(o => o.status === 'pending').length, status: 'pending' },
       { label: 'Processing', count: sourceOrders.filter(o => o.status === 'processing').length, status: 'processing' },
+      { label: 'Packed', count: sourceOrders.filter(o => o.status === 'packed').length, status: 'packed' },
+      { label: 'Packaging', count: sourceOrders.filter(o => o.status === 'packaging_for_delivery').length, status: 'packaging_for_delivery' },
       { label: 'Shipped', count: sourceOrders.filter(o => o.status === 'shipped').length, status: 'shipped' },
       { label: 'Delivered', count: sourceOrders.filter(o => o.status === 'delivered').length, status: 'delivered' },
       { label: 'Returned', count: sourceOrders.filter(o => o.status === 'returned').length, status: 'returned' },
-      { label: 'Cancelled', count: sourceOrders.filter(o => o.status === 'cancelled').length, status: 'cancelled' }
+      { label: 'Cancelled', count: sourceOrders.filter(o => o.status === 'cancelled').length, status: 'cancelled' },
     ]);
     setStatusFilter('all');
   }, [orders, orderViewTab]);
@@ -471,20 +475,9 @@ export default function AdminOrdersPage() {
     }
   };
 
-  const statusColors: Record<string, string> = {
-    'pending': 'bg-amber-100 text-amber-700 border-amber-200',
-    'processing': 'bg-blue-100 text-blue-700 border-blue-200',
-    'shipped': 'bg-purple-100 text-purple-700 border-purple-200',
-    'delivered': 'bg-emerald-100 text-emerald-700 border-emerald-200',
-    'completed': 'bg-emerald-100 text-emerald-800 border-emerald-200',
-    'returned': 'bg-orange-100 text-orange-800 border-orange-200',
-    'cancelled': 'bg-red-100 text-red-700 border-red-200',
-    'awaiting_payment': 'bg-gray-100 text-gray-700 border-gray-200'
-  };
+  const statusColors = ORDER_STATUS_COLORS;
 
-  const formatStatus = (status: string) => {
-    return status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Unknown';
-  };
+  const formatStatus = (status: string) => formatOrderStatus(status);
 
   const getCustomerName = (order: Order) => {
     if (order.shipping_address?.full_name) return order.shipping_address.full_name;
@@ -980,7 +973,7 @@ export default function AdminOrdersPage() {
           <p>These orders were created but payment was not completed. You can resend payment links to customers.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9 gap-3">
           {orderStats.map((stat) => (
             <button
               key={stat.status}
@@ -1090,6 +1083,18 @@ export default function AdminOrdersPage() {
                 className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors whitespace-nowrap cursor-pointer"
               >
                 Mark Processing
+              </button>
+              <button
+                onClick={() => handleBulkAction('Mark as Packed', 'packed')}
+                className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors whitespace-nowrap cursor-pointer"
+              >
+                Mark Packed
+              </button>
+              <button
+                onClick={() => handleBulkAction('Mark as Packaging for Delivery', 'packaging_for_delivery')}
+                className="px-3 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-sm font-medium transition-colors whitespace-nowrap cursor-pointer"
+              >
+                Mark Packaging
               </button>
               <button
                 onClick={() => handleBulkAction('Mark as Shipped', 'shipped')}

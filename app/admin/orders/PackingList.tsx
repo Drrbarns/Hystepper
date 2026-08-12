@@ -4,6 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { compareSizes } from '@/lib/sort-sizes';
 import AdminTableScroll from '@/components/admin/AdminTableScroll';
+import {
+  PACKING_LIST_LATE_STATUSES,
+  PACKING_LIST_STATUSES,
+} from '@/lib/order-status';
 
 type Period = 'today' | '7d' | '30d' | 'all';
 
@@ -97,7 +101,9 @@ function needsWarehousePick(order: any): boolean {
   // POS walk-in is completed at the till — nothing to pull from shelf.
   if (isPosWalkIn(order) && order.status === 'delivered') return false;
   // Never pack `pending` — that means checkout/payment did not complete.
-  return ['processing', 'shipped'].includes(order.status);
+  // Processing + Packed = still on the warehouse pull list.
+  return (PACKING_LIST_STATUSES as readonly string[]).includes(order.status)
+    || (PACKING_LIST_LATE_STATUSES as readonly string[]).includes(order.status);
 }
 
 function startOfPeriod(period: Period): string | null {
@@ -180,7 +186,9 @@ export default function PackingList() {
     setError('');
     try {
       // `pending` = unpaid / incomplete — never include on the packing list.
-      const statuses = includeShipped ? ['processing', 'shipped'] : ['processing'];
+      const statuses = includeShipped
+        ? [...PACKING_LIST_STATUSES, ...PACKING_LIST_LATE_STATUSES]
+        : [...PACKING_LIST_STATUSES];
 
       let query = supabase
         .from('order_items')
@@ -371,11 +379,11 @@ export default function PackingList() {
           Packing List
         </p>
         <p>
-          Pull list for paid / confirmed sales in <strong>Processing</strong>
-          {includeShipped ? ' or Shipped' : ''} — website and POS delivery.
-          Grouped by product code → color → size. Pending means payment did not
-          complete, so those never appear here. POS walk-in is excluded (already
-          handed over at the till).
+          Pull list for paid / confirmed sales in <strong>Processing</strong> or{' '}
+          <strong>Packed</strong>
+          {includeShipped ? ' (plus Packaging for Delivery / Shipped when checked)' : ''}.
+          Grouped by product code → color → size. Pending = unpaid, so never here.
+          POS walk-in is excluded.
         </p>
       </div>
 
@@ -408,7 +416,7 @@ export default function PackingList() {
                 onChange={(e) => setIncludeShipped(e.target.checked)}
                 className="rounded border-gray-300 text-violet-700 focus:ring-violet-500"
               />
-              Include shipped
+              Include packaging / shipped
             </label>
           </div>
 
@@ -481,8 +489,9 @@ export default function PackingList() {
             <p className="text-sm mt-2 max-w-md mx-auto">
               When orders need picking, you&apos;ll see rows like{' '}
               <strong className="text-gray-800">111</strong> → Black 40 (10 pairs), Black 38 (2 pairs).
-              Includes website and POS delivery orders in Processing
-              {includeShipped ? ' / Shipped' : ''} — not Pending (unpaid).
+              Includes Processing / Packed
+              {includeShipped ? ' (+ Packaging for Delivery / Shipped)' : ''} —
+              not Pending (unpaid).
             </p>
             {period === 'today' && (
               <p className="text-sm mt-2 text-violet-700">

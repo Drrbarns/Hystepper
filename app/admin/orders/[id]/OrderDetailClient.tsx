@@ -4,6 +4,11 @@ import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import FraudDetectionAlert from '@/components/FraudDetectionAlert';
+import {
+  ORDER_STATUS_COLORS,
+  ORDER_STATUS_OPTIONS,
+  formatOrderStatus,
+} from '@/lib/order-status';
 
 interface OrderDetailClientProps {
   orderId: string;
@@ -347,17 +352,8 @@ export default function OrderDetailClient({ orderId }: OrderDetailClientProps) {
     }
   };
 
-  const statusOptions = ['pending', 'processing', 'shipped', 'delivered', 'returned', 'cancelled'];
-  const statusColors: any = {
-    'pending': 'bg-amber-100 text-amber-700 border-amber-200',
-    'processing': 'bg-blue-100 text-blue-700 border-blue-200',
-    'shipped': 'bg-purple-100 text-purple-700 border-purple-200',
-    'delivered': 'bg-emerald-100 text-emerald-700 border-emerald-200',
-    'returned': 'bg-orange-100 text-orange-800 border-orange-200',
-    'cancelled': 'bg-red-100 text-red-700 border-red-200',
-    'completed': 'bg-emerald-100 text-emerald-800 border-emerald-200',
-    'awaiting_payment': 'bg-gray-100 text-gray-700 border-gray-200'
-  };
+  const statusOptions = [...ORDER_STATUS_OPTIONS];
+  const statusColors = ORDER_STATUS_COLORS;
 
   if (loading) return <div className="p-8 text-center">Loading...</div>;
   if (error || !order) return <div className="p-8 text-center text-red-500">{error || 'Order not found'}</div>;
@@ -369,12 +365,20 @@ export default function OrderDetailClient({ orderId }: OrderDetailClientProps) {
   const customerName = shippingAddress.full_name || order.email.split('@')[0];
 
   // Derive timeline from status (simplified logic as we don't have full history table joined here yet)
+  const afterProcessing = [
+    'processing', 'packed', 'packaging_for_delivery', 'shipped', 'delivered', 'completed',
+  ];
+  const afterPacked = ['packed', 'packaging_for_delivery', 'shipped', 'delivered', 'completed'];
+  const afterPackaging = ['packaging_for_delivery', 'shipped', 'delivered', 'completed'];
+  const afterShipped = ['shipped', 'delivered', 'completed'];
   const timeline = [
     { status: 'Order Placed', date: new Date(order.created_at).toLocaleString(), completed: true },
-    { status: 'Payment', date: order.payment_status, completed: order.payment_status === 'paid' },
-    { status: 'Processing', date: '', completed: ['processing', 'shipped', 'delivered'].includes(order.status) },
-    { status: 'Shipped', date: '', completed: ['shipped', 'delivered'].includes(order.status) },
-    { status: 'Delivered', date: '', completed: order.status === 'delivered' }
+    { status: 'Payment', date: order.payment_status, completed: order.payment_status === 'paid' || order.metadata?.pos_sale === true },
+    { status: 'Processing', date: '', completed: afterProcessing.includes(order.status) },
+    { status: 'Packed', date: '', completed: afterPacked.includes(order.status) },
+    { status: 'Packaging for Delivery', date: '', completed: afterPackaging.includes(order.status) },
+    { status: 'Shipped', date: '', completed: afterShipped.includes(order.status) },
+    { status: 'Delivered', date: '', completed: ['delivered', 'completed'].includes(order.status) },
   ];
 
   // Mock fraud analysis for now (or implement real logic later)
@@ -587,7 +591,7 @@ export default function OrderDetailClient({ orderId }: OrderDetailClientProps) {
                   onClick={() => setShowStatusMenu(!showStatusMenu)}
                   className={`w-full px-4 py-3 rounded-lg border-2 font-semibold text-left flex items-center justify-between ${statusColors[displayStatus] || 'bg-gray-100'}`}
                 >
-                  <span className="capitalize">{displayStatus}</span>
+                  <span>{formatOrderStatus(displayStatus)}</span>
                   <i className="ri-arrow-down-s-line text-xl"></i>
                 </button>
                 {hasPendingChange && (
@@ -605,10 +609,10 @@ export default function OrderDetailClient({ orderId }: OrderDetailClientProps) {
                           setPendingStatus(status === currentStatus ? null : status);
                           setShowStatusMenu(false);
                         }}
-                        className={`w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors capitalize ${status === displayStatus ? 'bg-emerald-50 font-semibold' : ''
+                        className={`w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors ${status === displayStatus ? 'bg-emerald-50 font-semibold' : ''
                           } ${status === 'cancelled' ? 'text-red-600 hover:bg-red-50' : ''}`}
                       >
-                        {status}
+                        {formatOrderStatus(status)}
                         {status === 'cancelled' && order.payment_status === 'paid' && (
                           <span className="text-xs text-red-400 ml-2">(will trigger refund)</span>
                         )}
