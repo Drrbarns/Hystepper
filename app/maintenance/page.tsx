@@ -2,7 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import BrandLogo from '@/components/BrandLogo';
+
+const BRAND = '#ee1c77';
+const LOGO = '/brand/hy-stepper-logo.png?v=20260813';
+const MARK = '/brand/hy-stepper-mark.png?v=20260813';
 
 function pad(n: number) {
   return String(n).padStart(2, '0');
@@ -14,6 +17,22 @@ function clean(v: unknown, fallback: string): string {
     .replace(/^['"]+|['"]+$/g, '')
     .trim();
   return s || fallback;
+}
+
+function TimeCell({ value, label }: { value: string; label: string }) {
+  return (
+    <div className="flex flex-col items-center min-w-[4.5rem] sm:min-w-[5.5rem]">
+      <span
+        className="text-4xl sm:text-5xl font-semibold tabular-nums tracking-tight text-neutral-900"
+        style={{ fontVariantNumeric: 'tabular-nums' }}
+      >
+        {value}
+      </span>
+      <span className="mt-2 text-[10px] sm:text-xs font-medium uppercase tracking-[0.28em] text-neutral-400">
+        {label}
+      </span>
+    </div>
+  );
 }
 
 export default function MaintenancePage() {
@@ -84,105 +103,164 @@ export default function MaintenancePage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-amber-50 flex items-center justify-center px-4">
-      <div className="max-w-2xl mx-auto text-center">
-        <div className="mb-8">
-          <div className="mb-6">
-            <BrandLogo href={null} className="h-16 sm:h-20 w-auto max-w-[260px] object-contain mx-auto" />
-          </div>
-          <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">
-            <i className="ri-tools-line text-4xl text-emerald-700"></i>
-          </div>
-          <h1 className="text-4xl sm:text-5xl font-bold text-gray-900 mb-6">
-            We&apos;ll Be Right Back
-          </h1>
-          <p className="text-lg sm:text-xl text-gray-600 mb-8 leading-relaxed">
-            We&apos;re currently performing scheduled maintenance to improve your shopping experience. Thank you for your patience.
+    <div
+      className="relative min-h-screen overflow-hidden text-neutral-900"
+      style={{
+        fontFamily: 'Outfit, system-ui, sans-serif',
+        background:
+          'radial-gradient(1200px 600px at 50% -10%, rgba(238,28,119,0.16), transparent 55%), linear-gradient(180deg, #fff7fa 0%, #ffffff 42%, #f6f3f4 100%)',
+      }}
+    >
+      <style dangerouslySetInnerHTML={{ __html: `
+        @keyframes hs-breathe {
+          0%, 100% { transform: scale(1); opacity: 0.55; }
+          50% { transform: scale(1.08); opacity: 0.85; }
+        }
+        @keyframes hs-rise {
+          from { opacity: 0; transform: translateY(18px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes hs-tick {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.35; }
+        }
+        .hs-breathe { animation: hs-breathe 5.5s ease-in-out infinite; }
+        .hs-rise { animation: hs-rise 0.85s cubic-bezier(0.22, 1, 0.36, 1) both; }
+        .hs-d1 { animation-delay: 0.08s; }
+        .hs-d2 { animation-delay: 0.18s; }
+        .hs-d3 { animation-delay: 0.28s; }
+        .hs-d4 { animation-delay: 0.4s; }
+        .hs-colon { animation: hs-tick 1s steps(1, end) infinite; }
+      `}} />
+
+      {/* Soft diagonal sheen */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 opacity-[0.04]"
+        style={{
+          backgroundImage:
+            'repeating-linear-gradient(-18deg, #111 0 1px, transparent 1px 14px)',
+        }}
+      />
+
+      {/* Brand orb behind mark — echoes the logo circle */}
+      <div
+        aria-hidden
+        className="hs-breathe pointer-events-none absolute left-1/2 top-[18%] h-56 w-56 -translate-x-1/2 rounded-full sm:h-72 sm:w-72"
+        style={{
+          background: `radial-gradient(circle, ${BRAND} 0%, rgba(238,28,119,0.35) 38%, transparent 70%)`,
+          filter: 'blur(2px)',
+        }}
+      />
+
+      <main className="relative z-10 mx-auto flex min-h-screen max-w-lg flex-col items-center justify-center px-6 py-16 text-center">
+        <div className="hs-rise relative mb-8">
+          <img
+            src={MARK}
+            alt=""
+            className="mx-auto mb-5 h-20 w-20 object-contain sm:h-24 sm:w-24 drop-shadow-sm"
+            width={96}
+            height={96}
+          />
+          <img
+            src={LOGO}
+            alt="Hy-Stepper"
+            className="mx-auto h-14 w-auto max-w-[240px] object-contain sm:h-16"
+            width={240}
+            height={170}
+          />
+          <p
+            className="mt-3 text-xs font-medium italic tracking-wide sm:text-sm"
+            style={{ color: BRAND }}
+          >
+            Stay sleek in style…
           </p>
         </div>
 
-        <div className="bg-white border border-gray-200 rounded-2xl p-8 mb-8 shadow-sm">
-          <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-4">Expected Downtime</h2>
+        <h1 className="hs-rise hs-d1 text-[2.35rem] leading-tight font-semibold tracking-tight text-neutral-900 sm:text-5xl">
+          We&apos;ll be right back
+        </h1>
+        <p className="hs-rise hs-d2 mt-4 max-w-md text-base leading-relaxed text-neutral-600 sm:text-lg">
+          The boutique is closed for a quick polish. Your cart stays safe — we&apos;ll reopen shortly.
+        </p>
+
+        <div className="hs-rise hs-d3 mt-12 w-full">
+          <p className="mb-5 text-[11px] font-semibold uppercase tracking-[0.32em] text-neutral-400">
+            Estimated time remaining
+          </p>
+
           {timeLeft !== null && !ended ? (
-            <div className="flex items-center justify-center gap-4 sm:gap-6 text-emerald-700">
-              <div className="flex flex-col items-center">
-                <span className="text-3xl sm:text-4xl font-bold tabular-nums">{pad(timeLeft.h)}</span>
-                <span className="text-xs sm:text-sm text-gray-500 uppercase tracking-wider">Hours</span>
-              </div>
-              <span className="text-2xl sm:text-3xl font-bold text-gray-300">:</span>
-              <div className="flex flex-col items-center">
-                <span className="text-3xl sm:text-4xl font-bold tabular-nums">{pad(timeLeft.m)}</span>
-                <span className="text-xs sm:text-sm text-gray-500 uppercase tracking-wider">Mins</span>
-              </div>
-              <span className="text-2xl sm:text-3xl font-bold text-gray-300">:</span>
-              <div className="flex flex-col items-center">
-                <span className="text-3xl sm:text-4xl font-bold tabular-nums animate-pulse">{pad(timeLeft.s)}</span>
-                <span className="text-xs sm:text-sm text-gray-500 uppercase tracking-wider">Secs</span>
-              </div>
+            <div className="flex items-start justify-center gap-2 sm:gap-4">
+              <TimeCell value={pad(timeLeft.h)} label="Hours" />
+              <span
+                className="hs-colon mt-1 text-3xl font-light sm:text-4xl"
+                style={{ color: BRAND }}
+                aria-hidden
+              >
+                :
+              </span>
+              <TimeCell value={pad(timeLeft.m)} label="Mins" />
+              <span
+                className="hs-colon mt-1 text-3xl font-light sm:text-4xl"
+                style={{ color: BRAND }}
+                aria-hidden
+              >
+                :
+              </span>
+              <TimeCell value={pad(timeLeft.s)} label="Secs" />
             </div>
           ) : ended ? (
-            <p className="text-gray-600">We&apos;re wrapping up. Please refresh the page shortly.</p>
+            <p className="text-neutral-600">
+              Almost there —{' '}
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="font-semibold underline underline-offset-4"
+                style={{ color: BRAND }}
+              >
+                refresh the page
+              </button>
+            </p>
           ) : (
-            <p className="text-gray-600">Loading countdown&hellip;</p>
+            <p className="text-neutral-500">Preparing countdown…</p>
           )}
+
+          <div
+            className="mx-auto mt-8 h-px w-24"
+            style={{ background: `linear-gradient(90deg, transparent, ${BRAND}, transparent)` }}
+          />
         </div>
 
-        <div className="grid sm:grid-cols-3 gap-4 sm:gap-6 mb-8">
-          <div className="bg-white border border-gray-200 rounded-xl p-6">
-            <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <i className="ri-rocket-line text-2xl text-blue-700"></i>
-            </div>
-            <h3 className="font-bold text-gray-900 mb-2">Performance</h3>
-            <p className="text-gray-600 text-sm">Faster loading times and smoother navigation</p>
-          </div>
-          <div className="bg-white border border-gray-200 rounded-xl p-6">
-            <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <i className="ri-shield-check-line text-2xl text-emerald-700"></i>
-            </div>
-            <h3 className="font-bold text-gray-900 mb-2">Security</h3>
-            <p className="text-gray-600 text-sm">Enhanced protection for your data and transactions</p>
-          </div>
-          <div className="bg-white border border-gray-200 rounded-xl p-6">
-            <div className="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <i className="ri-sparkle-line text-2xl text-amber-700"></i>
-            </div>
-            <h3 className="font-bold text-gray-900 mb-2">Features</h3>
-            <p className="text-gray-600 text-sm">New functionality to enhance your experience</p>
-          </div>
-        </div>
-
-        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-6 sm:p-8">
-          <h3 className="text-lg sm:text-xl font-bold text-gray-900 mb-4">Need Immediate Assistance?</h3>
-          <p className="text-gray-600 mb-6 text-sm sm:text-base">Our customer service team is still available to help you.</p>
-          <div className="flex flex-wrap gap-3 sm:gap-4 justify-center">
-            <a
-              href={`mailto:${contactEmail}`}
-              className="inline-flex items-center gap-2 bg-white text-gray-900 px-5 py-2.5 rounded-full font-medium hover:bg-gray-50 transition-colors border border-gray-200 text-sm"
-            >
-              <i className="ri-mail-line"></i>
-              Email Us
-            </a>
+        <div className="hs-rise hs-d4 mt-12 w-full">
+          <p className="mb-5 text-sm text-neutral-500">Need help right now?</p>
+          <div className="flex flex-wrap items-center justify-center gap-3">
             <a
               href={whatsappUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 bg-emerald-700 text-white px-5 py-2.5 rounded-full font-medium hover:bg-emerald-800 transition-colors text-sm"
+              className="inline-flex items-center gap-2 rounded-full px-6 py-3 text-sm font-semibold text-white transition-transform hover:scale-[1.02] active:scale-[0.98]"
+              style={{ backgroundColor: BRAND }}
             >
-              <i className="ri-whatsapp-line"></i>
+              <i className="ri-whatsapp-line text-lg" />
               WhatsApp
             </a>
             <a
-              href={phoneTel}
-              className="inline-flex items-center gap-2 bg-white text-gray-900 px-5 py-2.5 rounded-full font-medium hover:bg-gray-50 transition-colors border border-gray-200 text-sm"
+              href={`mailto:${contactEmail}`}
+              className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white/80 px-5 py-3 text-sm font-medium text-neutral-800 backdrop-blur transition-colors hover:border-neutral-300"
             >
-              <i className="ri-phone-line"></i>
-              Call Us
+              <i className="ri-mail-line" />
+              Email
+            </a>
+            <a
+              href={phoneTel}
+              className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white/80 px-5 py-3 text-sm font-medium text-neutral-800 backdrop-blur transition-colors hover:border-neutral-300"
+            >
+              <i className="ri-phone-line" />
+              Call
             </a>
           </div>
         </div>
-
-        <p className="text-gray-500 text-sm mt-8">Thank you for your patience</p>
-      </div>
+      </main>
     </div>
   );
 }
