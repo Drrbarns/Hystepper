@@ -82,7 +82,7 @@ export default function Header() {
                   aria-label="Go to homepage"
                 >
                   <img
-                    src="/brand/hy-stepper-logo.png?v=20260813"
+                    src="/brand/hy-stepper-logo.png?v=20260813b"
                     alt={siteName}
                     className="h-9 md:h-11 w-auto max-w-[160px] md:max-w-[200px] object-contain"
                     width={200}
@@ -237,7 +237,7 @@ export default function Header() {
           <div className="absolute top-0 left-0 bottom-0 w-[85%] max-w-sm bg-white shadow-2xl flex flex-col animate-in slide-in-from-left duration-300">
             <div className="p-6 border-b border-gray-100 flex items-center justify-between">
               <img
-                src="/brand/hy-stepper-logo.png?v=20260813"
+                src="/brand/hy-stepper-logo.png?v=20260813b"
                 alt={siteName}
                 className="h-9 w-auto max-w-[170px] object-contain"
                 width={170}

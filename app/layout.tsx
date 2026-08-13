@@ -6,7 +6,7 @@ import "./globals.css";
 
 const SITE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://hystepper.com';
 /** Cache-bust when brand assets change — forces browsers / PWAs to fetch new icons. */
-const ICON_V = '20260813';
+const ICON_V = '20260813b';
 const LOGO = `/brand/hy-stepper-logo.png?v=${ICON_V}`;
 const OG = `/og-share.png?v=${ICON_V}`;
 const ICON_192 = `/icon-192.png?v=${ICON_V}`;

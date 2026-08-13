@@ -2,7 +2,7 @@ import { Metadata } from 'next';
 
 const SITE_NAME = 'Hy-Stepper';
 const SITE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://hystepper.com';
-const OG_IMAGE = `${SITE_URL}/og-share.png?v=20260813`;
+const OG_IMAGE = `${SITE_URL}/og-share.png?v=20260813b`;
 
 interface SEOProps {
   title?: string;

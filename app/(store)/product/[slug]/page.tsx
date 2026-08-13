@@ -29,7 +29,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
   const mainImage = product.product_images
     ?.sort((a: any, b: any) => (a.position || 0) - (b.position || 0))[0]?.url
-    || `${SITE_URL}/og-share.png?v=20260813`;
+    || `${SITE_URL}/og-share.png?v=20260813b`;
 
   const rawDesc = product.description
     ? product.description.replace(/<[^>]+>/g, '').trim()

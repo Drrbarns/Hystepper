@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-export const BRAND_LOGO_SRC = '/brand/hy-stepper-logo.png?v=20260813';
+export const BRAND_LOGO_SRC = '/brand/hy-stepper-logo.png?v=20260813b';
 
 type BrandLogoProps = {
   href?: string | null;

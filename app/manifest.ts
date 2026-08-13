@@ -1,7 +1,7 @@
 import { MetadataRoute } from 'next';
 
 /** Bump when icons change so installed PWAs refresh. */
-const ICON_V = '20260813';
+const ICON_V = '20260813b';
 
 export default function manifest(): MetadataRoute.Manifest {
   return {

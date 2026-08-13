@@ -98,7 +98,7 @@ export default function Footer() {
           <div className="space-y-5">
             <Link href="/" className="inline-block group">
               <img
-                src="/brand/hy-stepper-logo-light.png?v=20260813"
+                src="/brand/hy-stepper-logo-light.png?v=20260813b"
                 alt={siteName}
                 className="h-12 w-auto max-w-[200px] object-contain"
                 width={200}

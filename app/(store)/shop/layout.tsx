@@ -17,13 +17,13 @@ export const metadata: Metadata = {
     url: `${SITE_URL}/shop`,
     siteName: 'Hy_stepper',
     locale: 'en_GH',
-    images: [{ url: `${SITE_URL}/og-share.png?v=20260813`, width: 1200, height: 630, alt: 'Hy-Stepper Shop' }],
+    images: [{ url: `${SITE_URL}/og-share.png?v=20260813b`, width: 1200, height: 630, alt: 'Hy-Stepper Shop' }],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'Shop All Products | Hy_stepper',
     description: 'Browse our full collection of premium heels, sneakers, bags and accessories.',
-    images: [`${SITE_URL}/og-share.png?v=20260813`],
+    images: [`${SITE_URL}/og-share.png?v=20260813b`],
   },
 };
 

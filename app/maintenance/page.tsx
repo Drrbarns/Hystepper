@@ -4,8 +4,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
 const BRAND = '#ee1c77';
-const LOGO = '/brand/hy-stepper-logo.png?v=20260813';
-const MARK = '/brand/hy-stepper-mark.png?v=20260813';
+const LOGO = '/brand/hy-stepper-logo.png?v=20260813b';
 
 function pad(n: number) {
   return String(n).padStart(2, '0');
@@ -156,25 +155,12 @@ export default function MaintenancePage() {
       <main className="relative z-10 mx-auto flex min-h-screen max-w-lg flex-col items-center justify-center px-6 py-16 text-center">
         <div className="hs-rise relative mb-8">
           <img
-            src={MARK}
-            alt=""
-            className="mx-auto mb-5 h-20 w-20 object-contain sm:h-24 sm:w-24 drop-shadow-sm"
-            width={96}
-            height={96}
-          />
-          <img
             src={LOGO}
             alt="Hy-Stepper"
-            className="mx-auto h-14 w-auto max-w-[240px] object-contain sm:h-16"
-            width={240}
-            height={170}
+            className="mx-auto h-16 w-auto max-w-[280px] object-contain sm:h-20"
+            width={280}
+            height={146}
           />
-          <p
-            className="mt-3 text-xs font-medium italic tracking-wide sm:text-sm"
-            style={{ color: BRAND }}
-          >
-            Stay sleek in style…
-          </p>
         </div>
 
         <h1 className="hs-rise hs-d1 text-[2.35rem] leading-tight font-semibold tracking-tight text-neutral-900 sm:text-5xl">
