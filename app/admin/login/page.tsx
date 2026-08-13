@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import BrandLogo from '@/components/BrandLogo';
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -51,9 +52,7 @@ export default function AdminLoginPage() {
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-gray-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <Link href="/" className="inline-block">
-            <span className="text-4xl font-bold text-emerald-700">Hy_stepper</span>
-          </Link>
+          <BrandLogo className="h-16 w-auto max-w-[240px] object-contain mx-auto" />
           <h1 className="text-3xl font-bold text-gray-900 mt-6 mb-2">Admin Login</h1>
           <p className="text-gray-600">Sign in to access the admin dashboard</p>
         </div>

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import BrandLogo from '@/components/BrandLogo';
 
 const RECOVERY_TOKEN_KEY = 'hs-recovery-token';
 
@@ -268,6 +269,9 @@ export default function ResetPasswordPage() {
     <main className="min-h-screen bg-gray-50 flex items-center justify-center py-12 px-4 sm:px-6">
       <div className="max-w-md w-full">
         <div className="text-center mb-8">
+          <div className="mb-5">
+            <BrandLogo className="h-14 w-auto max-w-[220px] object-contain mx-auto" />
+          </div>
           <h1 className="text-4xl font-bold text-gray-900 mb-2">
             {step === 'otp' ? "Verify it's you" : 'Set a new password'}
           </h1>

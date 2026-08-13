@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import BrandLogo from '@/components/BrandLogo';
 
 function pad(n: number) {
   return String(n).padStart(2, '0');
@@ -86,8 +87,11 @@ export default function MaintenancePage() {
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-amber-50 flex items-center justify-center px-4">
       <div className="max-w-2xl mx-auto text-center">
         <div className="mb-8">
-          <div className="w-32 h-32 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">
-            <i className="ri-tools-line text-6xl text-emerald-700"></i>
+          <div className="mb-6">
+            <BrandLogo href={null} className="h-16 sm:h-20 w-auto max-w-[260px] object-contain mx-auto" />
+          </div>
+          <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">
+            <i className="ri-tools-line text-4xl text-emerald-700"></i>
           </div>
           <h1 className="text-4xl sm:text-5xl font-bold text-gray-900 mb-6">
             We&apos;ll Be Right Back
