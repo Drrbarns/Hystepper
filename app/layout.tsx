@@ -1,27 +1,63 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Toaster } from "sonner";
 import { CartProvider } from "@/context/CartContext";
 import { WishlistProvider } from "@/context/WishlistContext";
 import "./globals.css";
 
-const SITE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://hystepper.vercel.app';
+const SITE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://hystepper.com';
+/** Cache-bust when brand assets change — forces browsers / PWAs to fetch new icons. */
+const ICON_V = '20260813';
+const LOGO = `/brand/hy-stepper-logo.png?v=${ICON_V}`;
+const OG = `/og-share.png?v=${ICON_V}`;
+const ICON_192 = `/icon-192.png?v=${ICON_V}`;
+const ICON_512 = `/icon-512.png?v=${ICON_V}`;
+const APPLE = `/apple-touch-icon.png?v=${ICON_V}`;
+
+export const viewport: Viewport = {
+  themeColor: '#e82177',
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+};
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: "Hy_stepper | Stay Sleek in Style",
-    template: "%s | Hy_stepper"
+    default: "Hy-Stepper | Stay Sleek in Style",
+    template: "%s | Hy-Stepper"
   },
   description: "Premium footwear & accessories for the modern woman. Shop heels, sneakers, bags and more — with fast delivery across Ghana.",
   keywords: [
-    "Hy_stepper", "women's shoes Ghana", "heels Accra", "sneakers Ghana",
+    "Hy-Stepper", "Hy_stepper", "women's shoes Ghana", "heels Accra", "sneakers Ghana",
     "buy shoes online Ghana", "premium footwear Ghana", "ladies bags Accra",
     "fashion accessories Ghana", "online shoe store Ghana", "delivery Accra"
   ],
-  authors: [{ name: "Hy_stepper" }],
-  creator: "Hy_stepper",
-  publisher: "Hy_stepper",
+  authors: [{ name: "Hy-Stepper" }],
+  creator: "Hy-Stepper",
+  publisher: "Hy-Stepper",
   category: "Shopping",
+  applicationName: "Hy-Stepper",
+  appleWebApp: {
+    capable: true,
+    title: "Hy-Stepper",
+    statusBarStyle: "default",
+  },
+  icons: {
+    icon: [
+      { url: `/favicon.ico?v=${ICON_V}`, sizes: 'any' },
+      { url: `/favicon-16.png?v=${ICON_V}`, sizes: '16x16', type: 'image/png' },
+      { url: `/favicon-32.png?v=${ICON_V}`, sizes: '32x32', type: 'image/png' },
+      { url: `/favicon-48.png?v=${ICON_V}`, sizes: '48x48', type: 'image/png' },
+      { url: ICON_192, sizes: '192x192', type: 'image/png' },
+      { url: ICON_512, sizes: '512x512', type: 'image/png' },
+    ],
+    apple: [{ url: APPLE, sizes: '180x180', type: 'image/png' }],
+    shortcut: [`/favicon.ico?v=${ICON_V}`],
+    other: [
+      { rel: 'mask-icon', url: `/brand/hy-stepper-mark.png?v=${ICON_V}` },
+    ],
+  },
+  manifest: `/manifest.webmanifest`,
   robots: {
     index: true,
     follow: true,
@@ -40,35 +76,42 @@ export const metadata: Metadata = {
     type: "website",
     locale: "en_GH",
     url: SITE_URL,
-    title: "Hy_stepper | Stay Sleek in Style",
+    title: "Hy-Stepper | Stay Sleek in Style",
     description: "Premium footwear & accessories for the modern woman. Shop heels, sneakers, bags and more — with fast delivery across Ghana.",
-    siteName: "Hy_stepper",
+    siteName: "Hy-Stepper",
     images: [
       {
-        url: "/opengraph-image",
+        url: OG,
         width: 1200,
         height: 630,
-        alt: "Hy_stepper — Stay Sleek in Style",
+        alt: "Hy-Stepper — Stay sleek in style",
+        type: "image/png",
+      },
+      {
+        url: LOGO,
+        width: 1024,
+        height: 723,
+        alt: "Hy-Stepper logo",
         type: "image/png",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Hy_stepper | Stay Sleek in Style",
+    title: "Hy-Stepper | Stay Sleek in Style",
     description: "Premium footwear & accessories for the modern woman. Fast delivery across Ghana.",
-    images: ["/opengraph-image"],
+    images: [OG],
     creator: "@hystepper",
   },
 };
 
-// Site-wide structured data injected on every page
 const organizationSchema = {
   "@context": "https://schema.org",
   "@type": "Organization",
-  name: "Hy_stepper",
+  name: "Hy-Stepper",
   url: SITE_URL,
-  logo: `${SITE_URL}/opengraph-image`,
+  logo: `${SITE_URL}${LOGO}`,
+  image: `${SITE_URL}${OG}`,
   description: "Premium footwear & accessories for the modern woman. Fast delivery across Ghana.",
   contactPoint: {
     "@type": "ContactPoint",
@@ -92,7 +135,7 @@ const organizationSchema = {
 const websiteSchema = {
   "@context": "https://schema.org",
   "@type": "WebSite",
-  name: "Hy_stepper",
+  name: "Hy-Stepper",
   url: SITE_URL,
   description: "Premium footwear & accessories for the modern woman.",
   potentialAction: {
@@ -113,6 +156,17 @@ export default function RootLayout({
   return (
     <html lang="en-GH">
       <head>
+        {/* Force brand icons even when browsers cache old /icon generators */}
+        <link rel="icon" href={`/favicon.ico?v=${ICON_V}`} sizes="any" />
+        <link rel="icon" type="image/png" sizes="16x16" href={`/favicon-16.png?v=${ICON_V}`} />
+        <link rel="icon" type="image/png" sizes="32x32" href={`/favicon-32.png?v=${ICON_V}`} />
+        <link rel="icon" type="image/png" sizes="48x48" href={`/favicon-48.png?v=${ICON_V}`} />
+        <link rel="icon" type="image/png" sizes="192x192" href={ICON_192} />
+        <link rel="icon" type="image/png" sizes="512x512" href={ICON_512} />
+        <link rel="apple-touch-icon" sizes="180x180" href={APPLE} />
+        <link rel="shortcut icon" href={`/favicon.ico?v=${ICON_V}`} />
+        <meta name="msapplication-TileImage" content={ICON_192} />
+        <meta name="msapplication-TileColor" content="#e82177" />
         <link rel="preconnect" href="https://cdn.jsdelivr.net" crossOrigin="anonymous" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />

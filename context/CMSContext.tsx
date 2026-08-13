@@ -62,9 +62,9 @@ interface CMSContextType {
 }
 
 const defaultSettings: SiteSettings = {
-    site_name: 'StandardStore',
-    site_tagline: 'Premium Shopping Experience',
-    site_logo: '/logo.png',
+    site_name: 'Hy-Stepper',
+    site_tagline: 'Stay sleek in style...',
+    site_logo: '/brand/hy-stepper-logo.png?v=20260813',
     contact_email: 'info@hystepper.com',
     contact_phone: '+233 XX XXX XXXX',
     contact_address: 'Accra, Ghana',
@@ -91,9 +91,9 @@ const CMSContext = createContext<CMSContextType>({
 
 export function CMSProvider({ children }: { children: ReactNode }) {
     const [settings, setSettings] = useState<SiteSettings>({
-        site_name: 'Hy_stepper',
-        site_tagline: 'Stay sleek in style',
-        site_logo: '/logo.png',
+        site_name: 'Hy-Stepper',
+        site_tagline: 'Stay sleek in style...',
+        site_logo: '/brand/hy-stepper-logo.png?v=20260813',
         contact_email: 'info@hystepper.com',
         contact_phone: '0276558163',
         contact_address: 'Accra, Ghana',

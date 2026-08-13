@@ -81,10 +81,13 @@ export default function Header() {
                   className="flex items-center group"
                   aria-label="Go to homepage"
                 >
-                  <span className="font-serif text-2xl font-bold tracking-tight text-gray-900 group-hover:text-gold-600 transition-colors">
-                    {siteName}
-                  </span>
-                  {/* <img src="/logo-new.png" alt={siteName} className="h-8 md:h-10 w-auto object-contain" /> */}
+                  <img
+                    src="/brand/hy-stepper-logo.png?v=20260813"
+                    alt={siteName}
+                    className="h-9 md:h-11 w-auto max-w-[160px] md:max-w-[200px] object-contain"
+                    width={200}
+                    height={141}
+                  />
                 </Link>
               </div>
 
@@ -233,7 +236,13 @@ export default function Header() {
           />
           <div className="absolute top-0 left-0 bottom-0 w-[85%] max-w-sm bg-white shadow-2xl flex flex-col animate-in slide-in-from-left duration-300">
             <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-              <span className="font-serif text-xl font-bold text-gray-900">{siteName}</span>
+              <img
+                src="/brand/hy-stepper-logo.png?v=20260813"
+                alt={siteName}
+                className="h-9 w-auto max-w-[170px] object-contain"
+                width={170}
+                height={120}
+              />
               <button
                 onClick={() => setIsMobileMenuOpen(false)}
                 className="p-2 -mr-2 text-gray-500 hover:text-gray-900 transition-colors"

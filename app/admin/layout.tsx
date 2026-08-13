@@ -377,7 +377,7 @@ export default function AdminLayout({
       >
         <div className="h-full px-4 py-6 overflow-y-auto">
           <Link href="/admin" className="flex items-center mb-8 px-2 cursor-pointer gap-2">
-            <img src="/logo-new.png" alt="Hy_stepper" className="h-8 w-auto object-contain" />
+            <img src="/brand/hy-stepper-logo.png?v=20260813" alt="Hy-Stepper" className="h-9 w-auto max-w-[140px] object-contain" />
             <span className="ml-1 text-sm font-semibold text-gray-500">ADMIN</span>
           </Link>
 

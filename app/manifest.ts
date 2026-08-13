@@ -1,39 +1,61 @@
 import { MetadataRoute } from 'next';
 
+/** Bump when icons change so installed PWAs refresh. */
+const ICON_V = '20260813';
+
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'Hy_stepper',
-    short_name: 'Hy_stepper',
-    description: 'Premium footwear & accessories for the modern woman. Stay Sleek in Style.',
+    name: 'Hy-Stepper',
+    short_name: 'Hy-Stepper',
+    description: 'Premium footwear & accessories for the modern woman. Stay sleek in style.',
     start_url: '/',
     display: 'standalone',
     orientation: 'portrait-primary',
-    background_color: '#0f0800',
-    theme_color: '#dc9527',
+    background_color: '#ffffff',
+    theme_color: '#e82177',
     categories: ['shopping', 'lifestyle'],
     icons: [
       {
-        src: '/icon',
+        src: `/favicon-32.png?v=${ICON_V}`,
         sizes: '32x32',
         type: 'image/png',
       },
       {
-        src: '/apple-icon',
-        sizes: '180x180',
+        src: `/icon-192.png?v=${ICON_V}`,
+        sizes: '192x192',
         type: 'image/png',
-        purpose: 'apple touch icon',
+        purpose: 'any',
       },
       {
-        src: '/opengraph-image',
-        sizes: '1200x630',
+        src: `/icon-512.png?v=${ICON_V}`,
+        sizes: '512x512',
+        type: 'image/png',
+        purpose: 'any',
+      },
+      {
+        src: `/maskable-192.png?v=${ICON_V}`,
+        sizes: '192x192',
+        type: 'image/png',
+        purpose: 'maskable',
+      },
+      {
+        src: `/maskable-512.png?v=${ICON_V}`,
+        sizes: '512x512',
+        type: 'image/png',
+        purpose: 'maskable',
+      },
+      {
+        src: `/apple-touch-icon.png?v=${ICON_V}`,
+        sizes: '180x180',
         type: 'image/png',
       },
     ],
     screenshots: [
       {
-        src: '/opengraph-image',
+        src: `/og-share.png?v=${ICON_V}`,
         sizes: '1200x630',
         type: 'image/png',
+        form_factor: 'wide',
       },
     ],
   };

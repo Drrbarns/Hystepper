@@ -1,7 +1,7 @@
 /* Hy_stepper service worker — cache bust / network-first.
  * Bump CACHE_VERSION whenever we need phones to drop stale assets.
  */
-const CACHE_VERSION = 'hystepper-v20260723b';
+const CACHE_VERSION = 'hystepper-v20260813-brand';
 const LEGACY_CACHES_PREFIX = 'hystepper';
 
 self.addEventListener('install', (event) => {
