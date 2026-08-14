@@ -636,10 +636,12 @@ export default function ProductEditor({ productId }: { productId: string }) {
 
       // 1. Build upsert payload — strip temp IDs, exclude disabled combinations.
       // Always persist option1 (size) so shop filters + PDP size chips stay correct.
+      // When the product base price changes, push it to EVERY variant so POS /
+      // checkout never keep charging a stale per-variant price.
       const variantsToUpsert = effectiveVariants.filter(v => !v._disabled).map(v => {
-        const variantPrice = basePriceChanged && Number(v.price) === loadedBasePrice
+        const variantPrice = basePriceChanged
           ? newBasePrice
-          : (v.price || 0);
+          : (Number(v.price) > 0 ? Number(v.price) : newBasePrice);
         const sizeFromName =
           typeof v.name === 'string' && v.name.includes(' / ')
             ? v.name.split(' / ')[0].trim()

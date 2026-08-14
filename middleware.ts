@@ -3,6 +3,15 @@ import type { NextRequest } from 'next/server';
 
 let cachedMaintenance: { value: boolean; at: number } | null = null;
 const CACHE_TTL_MS = 15_000;
+/** Keep last known value for much longer if PostgREST is briefly unreachable. */
+const STALE_OK_MS = 10 * 60_000;
+
+function parseMaintenanceFlag(raw: unknown): boolean {
+  if (raw === true || raw === 1) return true;
+  if (raw === false || raw === 0 || raw == null) return false;
+  const s = String(raw).trim().replace(/^"+|"+$/g, '').toLowerCase();
+  return s === 'true' || s === '1' || s === 'yes' || s === 'on';
+}
 
 async function isMaintenanceModeEnabled(): Promise<boolean> {
   const now = Date.now();
@@ -10,14 +19,11 @@ async function isMaintenanceModeEnabled(): Promise<boolean> {
     return cachedMaintenance.value;
   }
   try {
-    // Prefer direct PostgREST (avoids recursive fetch through this middleware).
     const base = (
       process.env.POSTGREST_URL ||
       process.env.NEXT_PUBLIC_SUPABASE_URL ||
       ''
     ).replace(/\/$/, '');
-    const url = `${base}/store_settings?key=eq.maintenance_mode&select=value&limit=1`;
-    // When base is the app origin (…/rest/v1), keep path shape:
     const finalUrl = base.includes('/rest/v1')
       ? `${base}/store_settings?key=eq.maintenance_mode&select=value&limit=1`
       : base.endsWith(':3000') || base.includes('hystepper-rest')
@@ -30,52 +36,56 @@ async function isMaintenanceModeEnabled(): Promise<boolean> {
         Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!}`,
       },
       cache: 'no-store',
+      signal: AbortSignal.timeout(4_000),
     });
-    const data: Array<{ value: string }> = await res.json();
-    // store_settings.value is jsonb — may arrive as boolean/string
-    const raw = data?.[0]?.value as unknown;
-    const enabled = raw === true || raw === 'true' || raw === '"true"';
+    if (!res.ok) throw new Error(`maintenance check HTTP ${res.status}`);
+    const data: Array<{ value: unknown }> = await res.json();
+    const enabled = parseMaintenanceFlag(data?.[0]?.value);
     cachedMaintenance = { value: enabled, at: now };
     return enabled;
   } catch {
-    return false;
+    // Do NOT fail open: if we recently knew maintenance was on, keep blocking.
+    if (cachedMaintenance && now - cachedMaintenance.at < STALE_OK_MS) {
+      return cachedMaintenance.value;
+    }
+    // Unknown / cold start with DB errors — don't lock the whole store.
+    // The forgeable admin_session bypass is removed; that was the real hole.
+    return cachedMaintenance?.value ?? false;
   }
 }
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Never gate backend gateway paths or static assets.
+  // Never gate backend gateway paths, admin, or static assets.
+  // Admin UI stays reachable so staff can turn maintenance off.
+  // Storefront preview during maintenance is intentionally blocked for everyone
+  // (including anyone with a forgeable client-side admin_session cookie).
   if (
     pathname.startsWith('/rest/') ||
     pathname.startsWith('/auth/') ||
     pathname.startsWith('/storage/') ||
     pathname.startsWith('/api/') ||
     pathname.startsWith('/_next/') ||
+    pathname.startsWith('/admin') ||
     pathname === '/maintenance' ||
     pathname.startsWith('/favicon') ||
     /\.[^/]+$/.test(pathname)
   ) {
+    if (pathname.startsWith('/admin')) {
+      const response = NextResponse.next();
+      response.headers.set('X-Robots-Tag', 'noindex, nofollow');
+      response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+      return response;
+    }
     return NextResponse.next();
-  }
-
-  if (pathname.startsWith('/admin')) {
-    const response = NextResponse.next();
-    response.headers.set('X-Robots-Tag', 'noindex, nofollow');
-    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate');
-    return response;
   }
 
   const inMaintenance = await isMaintenanceModeEnabled();
   if (inMaintenance) {
-    const isAdmin = request.cookies.get('admin_session')?.value === '1';
-    if (!isAdmin) {
-      return NextResponse.redirect(new URL('/maintenance', request.url));
-    }
+    return NextResponse.redirect(new URL('/maintenance', request.url));
   }
 
-  // HTML document navigations should always revalidate so phones don't keep
-  // stale product/page shells after a deploy.
   const response = NextResponse.next();
   const accept = request.headers.get('accept') || '';
   if (accept.includes('text/html')) {

@@ -126,10 +126,39 @@ export default function POSPage() {
                 .order('name');
 
             if (prodData) {
-                const formatted: Product[] = prodData.map((p: any) => ({
+                const formatted: Product[] = prodData.map((p: any) => {
+                    // Collapse duplicate size/colour rows (common after re-saves) by
+                    // summing stock and keeping the row with the most inventory.
+                    const rawVariants = (p.product_variants || []).map((v: any) => ({
+                        id: v.id,
+                        name: v.name,
+                        sku: v.sku,
+                        price: Number(v.price) > 0 ? Number(v.price) : Number(p.price) || 0,
+                        quantity: Number(v.quantity) || 0,
+                        option1: v.option1,
+                        option2: v.option2,
+                        image_url: v.image_url,
+                    }));
+                    const merged = new Map<string, typeof rawVariants[number]>();
+                    for (const v of rawVariants) {
+                        const built = [v.option1, v.option2].filter(Boolean).join(' / ').trim();
+                        const nm = (v.name || '').trim();
+                        const label = (nm.includes('/') ? nm : (built || nm)).toLowerCase();
+                        const key = label || v.id;
+                        const prev = merged.get(key);
+                        if (!prev) {
+                            merged.set(key, { ...v });
+                            continue;
+                        }
+                        const qty = prev.quantity + v.quantity;
+                        // Prefer the id that still has stock so POS decrements the live row.
+                        const keep = v.quantity >= prev.quantity ? v : prev;
+                        merged.set(key, { ...keep, quantity: qty, price: keep.price || prev.price || Number(p.price) || 0 });
+                    }
+                    return {
                     id: p.id,
                     name: p.name,
-                    price: p.price,
+                    price: Number(p.price) || 0,
                     quantity: p.quantity,
                     category: p.categories?.name || 'Uncategorized',
                     // First non-video gallery image, else first colour-variant photo
@@ -139,17 +168,9 @@ export default function POSPage() {
                         || (p.product_variants || []).find((v: any) => v?.image_url && !/\.(mp4|webm|ogg|mov)$/i.test(v.image_url))?.image_url
                         || '/placeholder-product.png',
                     sku: p.sku,
-                    variants: (p.product_variants || []).map((v: any) => ({
-                        id: v.id,
-                        name: v.name,
-                        sku: v.sku,
-                        price: Number(v.price) || Number(p.price),
-                        quantity: Number(v.quantity) || 0,
-                        option1: v.option1,
-                        option2: v.option2,
-                        image_url: v.image_url,
-                    })),
-                }));
+                    variants: Array.from(merged.values()),
+                    };
+                });
                 setProducts(formatted);
                 const cats = Array.from(new Set(formatted.map(p => p.category))).sort();
                 setCategories(['All', ...cats]);
@@ -219,9 +240,16 @@ export default function POSPage() {
                     variantId: variant.id,
                     name: product.name,
                     variantLabel: label,
-                    // Variants that were never individually priced can carry a
-                    // stale/zero price — never charge less than intended.
-                    price: Number(variant.price) > 0 ? Number(variant.price) : Number(product.price) || 0,
+                    // Charge the live product price when set — variant rows often
+                    // keep a stale price after the admin updates the product.
+                    // Only keep a variant override when it differs from product.price
+                    // AND the product price is unset/zero.
+                    price: (() => {
+                        const productPrice = Number(product.price) || 0;
+                        const variantPrice = Number(variant.price) || 0;
+                        if (productPrice > 0) return productPrice;
+                        return variantPrice > 0 ? variantPrice : 0;
+                    })(),
                     image: variant.image_url || product.image,
                     sku: variant.sku,
                     stock: variant.quantity,
