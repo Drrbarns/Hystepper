@@ -3,7 +3,6 @@ import Link from 'next/link';
 type BrandLogoProps = {
   href?: string | null;
   className?: string;
-  /** Visual weight for the text wordmark */
   size?: 'sm' | 'md' | 'lg';
 };
 
@@ -13,7 +12,7 @@ const SIZE_CLASS = {
   lg: 'text-4xl',
 } as const;
 
-/** Text wordmark — image logos were reverted. */
+/** Text wordmark — matches classic storefront branding. */
 export default function BrandLogo({
   href = '/',
   className = '',
@@ -23,18 +22,18 @@ export default function BrandLogo({
     <span
       className={`font-serif font-bold tracking-tight text-gray-900 ${SIZE_CLASS[size]} ${className}`.trim()}
     >
-      Hy-Stepper
+      Hy_stepper
     </span>
   );
 
   if (!href) return wordmark;
 
   return (
-    <Link href={href} className="inline-block group" aria-label="Hy-Stepper home">
+    <Link href={href} className="inline-block group" aria-label="Hy_stepper home">
       <span
         className={`font-serif font-bold tracking-tight text-gray-900 group-hover:text-gold-600 transition-colors ${SIZE_CLASS[size]} ${className}`.trim()}
       >
-        Hy-Stepper
+        Hy_stepper
       </span>
     </Link>
   );
