@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
 const BRAND = '#ee1c77';
-const LOGO = '/brand/hy-stepper-logo.png?v=20260813b';
 
 function pad(n: number) {
   return String(n).padStart(2, '0');

@@ -4,7 +4,6 @@ import { useEffect, useState, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import BrandLogo from '@/components/BrandLogo';
 
 function ConfirmEmailInner() {
   const router = useRouter();
@@ -82,11 +81,7 @@ function ConfirmEmailInner() {
 
   return (
     <main className="min-h-screen bg-gray-50 flex items-center justify-center py-12 px-4">
-      <div className="max-w-md w-full">
-        <div className="text-center mb-6">
-          <BrandLogo className="h-14 w-auto max-w-[220px] object-contain mx-auto" />
-        </div>
-      <div className="bg-white rounded-xl shadow-sm p-8 text-center">
+      <div className="max-w-md w-full bg-white rounded-xl shadow-sm p-8 text-center">
         {status === 'loading' && (
           <>
             <div className="w-16 h-16 mx-auto mb-4 bg-emerald-50 rounded-full flex items-center justify-center">
@@ -125,7 +120,6 @@ function ConfirmEmailInner() {
             </div>
           </>
         )}
-      </div>
       </div>
     </main>
   );

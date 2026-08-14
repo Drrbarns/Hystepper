@@ -1,32 +1,41 @@
 import Link from 'next/link';
 
-export const BRAND_LOGO_SRC = '/brand/hy-stepper-logo.png?v=20260813b';
-
 type BrandLogoProps = {
   href?: string | null;
   className?: string;
-  priority?: boolean;
+  /** Visual weight for the text wordmark */
+  size?: 'sm' | 'md' | 'lg';
 };
 
+const SIZE_CLASS = {
+  sm: 'text-xl',
+  md: 'text-2xl',
+  lg: 'text-4xl',
+} as const;
+
+/** Text wordmark — image logos were reverted. */
 export default function BrandLogo({
   href = '/',
-  className = 'h-14 w-auto max-w-[220px] object-contain',
+  className = '',
+  size = 'md',
 }: BrandLogoProps) {
-  const img = (
-    <img
-      src={BRAND_LOGO_SRC}
-      alt="Hy-Stepper"
-      className={className}
-      width={220}
-      height={155}
-    />
+  const wordmark = (
+    <span
+      className={`font-serif font-bold tracking-tight text-gray-900 ${SIZE_CLASS[size]} ${className}`.trim()}
+    >
+      Hy-Stepper
+    </span>
   );
 
-  if (!href) return img;
+  if (!href) return wordmark;
 
   return (
-    <Link href={href} className="inline-block" aria-label="Hy-Stepper home">
-      {img}
+    <Link href={href} className="inline-block group" aria-label="Hy-Stepper home">
+      <span
+        className={`font-serif font-bold tracking-tight text-gray-900 group-hover:text-gold-600 transition-colors ${SIZE_CLASS[size]} ${className}`.trim()}
+      >
+        Hy-Stepper
+      </span>
     </Link>
   );
 }

@@ -97,13 +97,7 @@ export default function Footer() {
           {/* Brand */}
           <div className="space-y-5">
             <Link href="/" className="inline-block group">
-              <img
-                src="/brand/hy-stepper-logo-light.png?v=20260813b"
-                alt={siteName}
-                className="h-12 w-auto max-w-[200px] object-contain"
-                width={200}
-                height={141}
-              />
+              <span className="font-serif text-2xl font-bold tracking-tight text-white group-hover:text-gold-400 transition-colors">{siteName}</span>
             </Link>
             <p className="text-gray-400 leading-relaxed text-sm">
               {siteTagline}
