@@ -377,7 +377,7 @@ export default function AdminLayout({
       >
         <div className="h-full px-4 py-6 overflow-y-auto">
           <Link href="/admin" className="flex items-center mb-8 px-2 cursor-pointer">
-            <span className="font-serif text-2xl font-bold tracking-tight text-gray-900">Hy-Stepper</span>
+            <span className="font-serif text-2xl font-bold tracking-tight text-gray-900">Hy_stepper</span>
           </Link>
 
           <nav className="space-y-1">

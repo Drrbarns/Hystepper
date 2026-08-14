@@ -62,7 +62,7 @@ interface CMSContextType {
 }
 
 const defaultSettings: SiteSettings = {
-    site_name: 'Hy-Stepper',
+    site_name: 'Hy_stepper',
     site_tagline: 'Stay sleek in style...',
     site_logo: '/brand/hy-stepper-logo.png?v=20260813b',
     contact_email: 'info@hystepper.com',
@@ -91,7 +91,7 @@ const CMSContext = createContext<CMSContextType>({
 
 export function CMSProvider({ children }: { children: ReactNode }) {
     const [settings, setSettings] = useState<SiteSettings>({
-        site_name: 'Hy-Stepper',
+        site_name: 'Hy_stepper',
         site_tagline: 'Stay sleek in style...',
         site_logo: '/brand/hy-stepper-logo.png?v=20260813b',
         contact_email: 'info@hystepper.com',

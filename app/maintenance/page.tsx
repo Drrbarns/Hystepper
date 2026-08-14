@@ -154,7 +154,7 @@ export default function MaintenancePage() {
       <main className="relative z-10 mx-auto flex min-h-screen max-w-lg flex-col items-center justify-center px-6 py-16 text-center">
         <div className="hs-rise relative mb-8">
           <p className="font-serif text-3xl sm:text-4xl font-bold tracking-tight text-gray-900">
-            Hy-Stepper
+            Hy_stepper
           </p>
           <p
             className="mt-2 text-xs font-medium italic tracking-wide sm:text-sm"

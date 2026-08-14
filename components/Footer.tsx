@@ -40,7 +40,7 @@ export default function Footer() {
     }
   };
 
-  const siteName = getSetting('site_name') || 'Hy-Stepper';
+  const siteName = getSetting('site_name') || 'Hy_stepper';
   const siteTagline = getSetting('site_tagline') || 'Stay sleek in style';
   const contactEmail = getSetting('contact_email')?.replace(/^['"]+|['"]+$/g, '').trim() || 'info@hystepper.com';
   const contactPhone = getSetting('contact_phone')?.replace(/^['"]+|['"]+$/g, '').trim() || '0276558163';

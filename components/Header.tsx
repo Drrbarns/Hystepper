@@ -21,7 +21,7 @@ export default function Header() {
   const { cartCount, isCartOpen, setIsCartOpen } = useCart();
   const { getSetting } = useCMS();
 
-  const siteName = getSetting('site_name') || 'Hy-Stepper';
+  const siteName = getSetting('site_name') || 'Hy_stepper';
 
   useEffect(() => {
     const handleScroll = () => {
