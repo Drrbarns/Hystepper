@@ -84,6 +84,7 @@ export default function Header() {
                   <span className="font-serif text-2xl font-bold tracking-tight text-gray-900 group-hover:text-gold-600 transition-colors">
                     {siteName}
                   </span>
+                  {/* <img src="/logo-new.png" alt={siteName} className="h-8 md:h-10 w-auto object-contain" /> */}
                 </Link>
               </div>
 
