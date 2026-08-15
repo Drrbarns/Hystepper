@@ -5,9 +5,9 @@ const ICON_V = '20260813b';
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'Hy-Stepper',
-    short_name: 'Hy-Stepper',
-    description: 'Premium footwear & accessories for the modern woman. Stay sleek in style.',
+    name: 'Hy_stepper',
+    short_name: 'Hy_stepper',
+    description: 'Premium footwear & accessories for the modern woman. Stay Sleek in Style.',
     start_url: '/',
     display: 'standalone',
     orientation: 'portrait-primary',

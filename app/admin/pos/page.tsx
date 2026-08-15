@@ -240,16 +240,9 @@ export default function POSPage() {
                     variantId: variant.id,
                     name: product.name,
                     variantLabel: label,
-                    // Charge the live product price when set — variant rows often
-                    // keep a stale price after the admin updates the product.
-                    // Only keep a variant override when it differs from product.price
-                    // AND the product price is unset/zero.
-                    price: (() => {
-                        const productPrice = Number(product.price) || 0;
-                        const variantPrice = Number(variant.price) || 0;
-                        if (productPrice > 0) return productPrice;
-                        return variantPrice > 0 ? variantPrice : 0;
-                    })(),
+                    // Match pre-logo POS pricing: use the variant price when set,
+                    // otherwise fall back to the product price.
+                    price: Number(variant.price) > 0 ? Number(variant.price) : Number(product.price) || 0,
                     image: variant.image_url || product.image,
                     sku: variant.sku,
                     stock: variant.quantity,

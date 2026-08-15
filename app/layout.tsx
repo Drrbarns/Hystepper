@@ -23,23 +23,23 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: "Hy-Stepper | Stay Sleek in Style",
-    template: "%s | Hy-Stepper"
+    default: "Hy_stepper | Stay Sleek in Style",
+    template: "%s | Hy_stepper"
   },
   description: "Premium footwear & accessories for the modern woman. Shop heels, sneakers, bags and more — with fast delivery across Ghana.",
   keywords: [
-    "Hy-Stepper", "Hy_stepper", "women's shoes Ghana", "heels Accra", "sneakers Ghana",
+    "Hy_stepper", "women's shoes Ghana", "heels Accra", "sneakers Ghana",
     "buy shoes online Ghana", "premium footwear Ghana", "ladies bags Accra",
     "fashion accessories Ghana", "online shoe store Ghana", "delivery Accra"
   ],
-  authors: [{ name: "Hy-Stepper" }],
-  creator: "Hy-Stepper",
-  publisher: "Hy-Stepper",
+  authors: [{ name: "Hy_stepper" }],
+  creator: "Hy_stepper",
+  publisher: "Hy_stepper",
   category: "Shopping",
-  applicationName: "Hy-Stepper",
+  applicationName: "Hy_stepper",
   appleWebApp: {
     capable: true,
-    title: "Hy-Stepper",
+    title: "Hy_stepper",
     statusBarStyle: "default",
   },
   icons: {
@@ -76,29 +76,29 @@ export const metadata: Metadata = {
     type: "website",
     locale: "en_GH",
     url: SITE_URL,
-    title: "Hy-Stepper | Stay Sleek in Style",
+    title: "Hy_stepper | Stay Sleek in Style",
     description: "Premium footwear & accessories for the modern woman. Shop heels, sneakers, bags and more — with fast delivery across Ghana.",
-    siteName: "Hy-Stepper",
+    siteName: "Hy_stepper",
     images: [
       {
         url: OG,
         width: 1200,
         height: 630,
-        alt: "Hy-Stepper — Stay sleek in style",
+        alt: "Hy_stepper — Stay Sleek in Style",
         type: "image/png",
       },
       {
         url: LOGO,
         width: 1024,
         height: 723,
-        alt: "Hy-Stepper logo",
+        alt: "Hy_stepper logo",
         type: "image/png",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Hy-Stepper | Stay Sleek in Style",
+    title: "Hy_stepper | Stay Sleek in Style",
     description: "Premium footwear & accessories for the modern woman. Fast delivery across Ghana.",
     images: [OG],
     creator: "@hystepper",
@@ -108,7 +108,7 @@ export const metadata: Metadata = {
 const organizationSchema = {
   "@context": "https://schema.org",
   "@type": "Organization",
-  name: "Hy-Stepper",
+  name: "Hy_stepper",
   url: SITE_URL,
   logo: `${SITE_URL}${LOGO}`,
   image: `${SITE_URL}${OG}`,
@@ -135,7 +135,7 @@ const organizationSchema = {
 const websiteSchema = {
   "@context": "https://schema.org",
   "@type": "WebSite",
-  name: "Hy-Stepper",
+  name: "Hy_stepper",
   url: SITE_URL,
   description: "Premium footwear & accessories for the modern woman.",
   potentialAction: {
