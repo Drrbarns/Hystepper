@@ -138,12 +138,21 @@ export default async function BlogPostPage({ params }: { params: Promise<{ id: s
         <article className="prose prose-lg max-w-none">
           {contentLooksLikeHtml ? (
             <div
-              className="text-gray-600 leading-relaxed"
+              className="blog-content text-gray-700 leading-relaxed
+                [&_h2]:text-3xl [&_h2]:font-bold [&_h2]:text-gray-900 [&_h2]:mt-10 [&_h2]:mb-4
+                [&_h3]:text-2xl [&_h3]:font-semibold [&_h3]:text-gray-900 [&_h3]:mt-8 [&_h3]:mb-3
+                [&_p]:mb-5 [&_p]:leading-8
+                [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:mb-5
+                [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:mb-5
+                [&_li]:mb-2
+                [&_blockquote]:border-l-4 [&_blockquote]:border-emerald-500 [&_blockquote]:pl-5 [&_blockquote]:italic [&_blockquote]:text-gray-600 [&_blockquote]:my-6
+                [&_a]:text-emerald-700 [&_a]:underline
+                [&_img]:rounded-xl [&_img]:my-8 [&_img]:w-full [&_img]:object-cover
+                [&_strong]:font-semibold [&_strong]:text-gray-900"
               dangerouslySetInnerHTML={{ __html: post.content }}
-              style={{ fontSize: '1.125rem', lineHeight: '1.8' }}
             />
           ) : (
-            <div className="text-gray-600 leading-relaxed whitespace-pre-wrap" style={{ fontSize: '1.125rem', lineHeight: '1.8' }}>
+            <div className="text-gray-700 leading-relaxed whitespace-pre-wrap text-lg">
               {post.content}
             </div>
           )}

@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import AdminTableScroll from '@/components/admin/AdminTableScroll';
+import BlogRichEditor from '@/components/admin/BlogRichEditor';
 import {
   slugifyBlogTitle,
   parseTagsInput,
@@ -119,7 +120,8 @@ export default function AdminBlogPage() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.title.trim() || !form.content.trim()) {
+    const plainContent = form.content.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim();
+    if (!form.title.trim() || !plainContent) {
       toast.error('Title and content are required');
       return;
     }
@@ -406,25 +408,61 @@ export default function AdminBlogPage() {
 
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1">Content *</label>
-                <textarea
+                <BlogRichEditor
                   value={form.content}
-                  onChange={(e) => setForm((prev) => ({ ...prev, content: e.target.value }))}
-                  rows={12}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none font-mono text-sm"
-                  required
+                  onChange={(html) => setForm((prev) => ({ ...prev, content: html }))}
+                  placeholder="Write your article with the formatting toolbar…"
                 />
-                <p className="text-xs text-gray-500 mt-1">Plain text or HTML supported.</p>
+                {!form.content.replace(/<[^>]+>/g, '').trim() && (
+                  <p className="text-xs text-red-500 mt-1">Content is required.</p>
+                )}
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1">Featured image URL</label>
-                <input
-                  type="url"
-                  value={form.featured_image}
-                  onChange={(e) => setForm((prev) => ({ ...prev, featured_image: e.target.value }))}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"
-                  placeholder="https://…"
-                />
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Featured image</label>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <input
+                    type="url"
+                    value={form.featured_image}
+                    onChange={(e) => setForm((prev) => ({ ...prev, featured_image: e.target.value }))}
+                    className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none"
+                    placeholder="https://… or upload a file"
+                  />
+                  <label className="inline-flex items-center justify-center gap-2 px-4 py-2.5 border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 cursor-pointer whitespace-nowrap">
+                    <i className="ri-upload-2-line"></i>
+                    Upload
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = '';
+                        if (!file) return;
+                        try {
+                          const ext = file.name.split('.').pop() || 'jpg';
+                          const filePath = `blog/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+                          const { error } = await supabase.storage
+                            .from('products')
+                            .upload(filePath, file, { upsert: true });
+                          if (error) throw error;
+                          const { data: { publicUrl } } = supabase.storage.from('products').getPublicUrl(filePath);
+                          setForm((prev) => ({ ...prev, featured_image: publicUrl }));
+                          toast.success('Image uploaded');
+                        } catch (err: any) {
+                          toast.error(err?.message || 'Upload failed');
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+                {form.featured_image && (
+                  <img
+                    src={form.featured_image}
+                    alt=""
+                    className="mt-3 h-28 rounded-lg object-cover border border-gray-200"
+                  />
+                )}
               </div>
 
               <div className="grid sm:grid-cols-2 gap-4">
