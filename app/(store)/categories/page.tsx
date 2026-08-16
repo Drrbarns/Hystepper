@@ -1,7 +1,25 @@
 import Link from 'next/link';
 import Image from 'next/image';
+import type { Metadata } from 'next';
 import { supabase } from '@/lib/supabase';
 import PageHero from '@/components/PageHero';
+
+const SITE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://hystepper.vercel.app';
+
+export const metadata: Metadata = {
+  title: 'Shop by Category',
+  description:
+    'Explore Hy_stepper collections — heels, sneakers, bags and accessories. Find exactly what you are looking for.',
+  alternates: { canonical: `${SITE_URL}/categories` },
+  openGraph: {
+    title: 'Shop by Category | Hy_stepper',
+    description: 'Explore our curated collections and find exactly what you are looking for.',
+    type: 'website',
+    url: `${SITE_URL}/categories`,
+    siteName: 'Hy_stepper',
+    locale: 'en_GH',
+  },
+};
 
 // Always fresh: the catalogue is small, admins can reorder categories
 // at any time, and a stale ISR cache here was causing reorders to take
@@ -57,7 +75,7 @@ export default async function CategoriesPage() {
             {categories.map((category, idx) => (
               <Link
                 key={category.id}
-                href={`/shop?category=${category.slug}`}
+                href={`/categories/${category.slug}`}
                 className="group bg-white border border-transparent rounded-2xl overflow-hidden shadow-sm hover:shadow-2xl hover:border-gold-500/30 transition-all duration-300 hover:-translate-y-1 cursor-pointer animate-fade-in-up"
                 style={{ animationDelay: `${idx * 100}ms` }}
               >

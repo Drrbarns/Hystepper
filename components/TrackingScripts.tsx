@@ -14,8 +14,147 @@ declare global {
     }
 }
 
-// Injects Google Analytics 4 + Meta Pixel when the conversion-tracking module
-// is enabled AND IDs exist in Admin → Settings → Tracking.
+/** Set by TrackingScripts when conversion-tracking module is enabled. */
+let conversionTrackingModuleEnabled = false;
+
+export function setConversionTrackingModuleEnabled(enabled: boolean) {
+    conversionTrackingModuleEnabled = enabled;
+}
+
+function canFireConversionEvents(): boolean {
+    if (typeof window === 'undefined') return false;
+    // Scripts only load when conversion-tracking module is enabled + IDs exist.
+    return typeof window.gtag === 'function' || typeof window.fbq === 'function';
+}
+
+export function trackAddToCart(payload: {
+    id: string;
+    name: string;
+    price: number;
+    quantity: number;
+}) {
+    try {
+        if (!canFireConversionEvents()) return;
+        const value = payload.price * payload.quantity;
+        if (typeof window.gtag === 'function') {
+            window.gtag('event', 'add_to_cart', {
+                currency: 'GHS',
+                value,
+                items: [{
+                    item_id: payload.id,
+                    item_name: payload.name,
+                    price: payload.price,
+                    quantity: payload.quantity,
+                }],
+            });
+        }
+        if (typeof window.fbq === 'function') {
+            window.fbq('track', 'AddToCart', {
+                content_ids: [payload.id],
+                content_name: payload.name,
+                content_type: 'product',
+                value,
+                currency: 'GHS',
+            });
+        }
+    } catch {
+        // Tracking must never break the storefront.
+    }
+}
+
+export function trackBeginCheckout(payload: {
+    value: number;
+    items: Array<{ id: string; name: string; price: number; quantity: number }>;
+}) {
+    try {
+        if (!canFireConversionEvents()) return;
+        if (typeof window.gtag === 'function') {
+            window.gtag('event', 'begin_checkout', {
+                currency: 'GHS',
+                value: payload.value,
+                items: payload.items.map((it) => ({
+                    item_id: it.id,
+                    item_name: it.name,
+                    price: it.price,
+                    quantity: it.quantity,
+                })),
+            });
+        }
+        if (typeof window.fbq === 'function') {
+            window.fbq('track', 'InitiateCheckout', {
+                value: payload.value,
+                currency: 'GHS',
+                contents: payload.items.map((it) => ({
+                    id: it.id,
+                    quantity: it.quantity,
+                })),
+                content_type: 'product',
+                num_items: payload.items.reduce((sum, it) => sum + it.quantity, 0),
+            });
+        }
+    } catch {
+        // Tracking must never break the storefront.
+    }
+}
+
+export function trackViewContent(payload: { id: string; name: string; price: number }) {
+    try {
+        if (!canFireConversionEvents()) return;
+        if (typeof window.gtag === 'function') {
+            window.gtag('event', 'view_item', {
+                currency: 'GHS',
+                value: payload.price,
+                items: [{
+                    item_id: payload.id,
+                    item_name: payload.name,
+                    price: payload.price,
+                }],
+            });
+        }
+        if (typeof window.fbq === 'function') {
+            window.fbq('track', 'ViewContent', {
+                content_ids: [payload.id],
+                content_name: payload.name,
+                content_type: 'product',
+                value: payload.price,
+                currency: 'GHS',
+            });
+        }
+    } catch {
+        // Tracking must never break the storefront.
+    }
+}
+
+export function trackPurchase(order: {
+    orderNumber: string;
+    total: number;
+    currency?: string;
+    items?: { name: string; quantity: number; price: number }[];
+}) {
+    try {
+        if (typeof window === 'undefined') return;
+        if (!conversionTrackingModuleEnabled) return;
+        const currency = order.currency || 'GHS';
+        if (typeof window.gtag === 'function') {
+            window.gtag('event', 'purchase', {
+                transaction_id: order.orderNumber,
+                value: order.total,
+                currency,
+                items: (order.items || []).map(it => ({
+                    item_name: it.name,
+                    quantity: it.quantity,
+                    price: it.price,
+                })),
+            });
+        }
+        if (typeof window.fbq === 'function') {
+            window.fbq('track', 'Purchase', { value: order.total, currency });
+        }
+    } catch {
+        // Tracking must never break the storefront.
+    }
+}
+
 export default function TrackingScripts() {
     const { getSetting } = useCMS();
     const pathname = usePathname();
@@ -36,9 +175,16 @@ export default function TrackingScripts() {
                     .select('enabled')
                     .eq('id', 'conversion-tracking')
                     .maybeSingle();
-                if (!cancelled) setConversionEnabled(!!data?.enabled);
+                if (!cancelled) {
+                    const enabled = !!data?.enabled;
+                    setConversionEnabled(enabled);
+                    setConversionTrackingModuleEnabled(enabled);
+                }
             } catch {
-                if (!cancelled) setConversionEnabled(false);
+                if (!cancelled) {
+                    setConversionEnabled(false);
+                    setConversionTrackingModuleEnabled(false);
+                }
             }
         })();
         return () => {
@@ -97,33 +243,4 @@ export default function TrackingScripts() {
     }, [pathname, ga4Id, pixelId, trackingActive]);
 
     return null;
-}
-
-export function trackPurchase(order: {
-    orderNumber: string;
-    total: number;
-    currency?: string;
-    items?: { name: string; quantity: number; price: number }[];
-}) {
-    try {
-        if (typeof window === 'undefined') return;
-        const currency = order.currency || 'GHS';
-        if (typeof window.gtag === 'function') {
-            window.gtag('event', 'purchase', {
-                transaction_id: order.orderNumber,
-                value: order.total,
-                currency,
-                items: (order.items || []).map(it => ({
-                    item_name: it.name,
-                    quantity: it.quantity,
-                    price: it.price,
-                })),
-            });
-        }
-        if (typeof window.fbq === 'function') {
-            window.fbq('track', 'Purchase', { value: order.total, currency });
-        }
-    } catch {
-        // Tracking must never break the storefront.
-    }
 }

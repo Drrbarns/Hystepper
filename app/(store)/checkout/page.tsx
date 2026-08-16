@@ -21,11 +21,14 @@ import {
   storewideDiscountAmount,
   type StorePromotions,
 } from '@/lib/promotions';
+import { trackBeginCheckout } from '@/components/TrackingScripts';
 
 export default function CheckoutPage() {
   const router = useRouter();
   const { cart, subtotal: cartSubtotal, clearCart, revalidateCart } = useCart();
   const { getSetting } = useCMS();
+
+  const checkoutTrackedRef = useRef(false);
 
   // Re-check stock + product status the moment the customer lands on
   // /checkout. The cart provider already does this on app load + window
@@ -35,6 +38,20 @@ export default function CheckoutPage() {
     void revalidateCart();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (checkoutTrackedRef.current || cart.length === 0) return;
+    checkoutTrackedRef.current = true;
+    trackBeginCheckout({
+      value: cartSubtotal,
+      items: cart.map((item) => ({
+        id: item.id,
+        name: item.name,
+        price: Number(item.price) || 0,
+        quantity: item.quantity,
+      })),
+    });
+  }, [cart, cartSubtotal]);
 
   // "Contact us for a quote" fallback links — sourced from admin
   // settings so the merchant can update them in one place.

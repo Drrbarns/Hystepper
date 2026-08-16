@@ -126,6 +126,13 @@ export default function AbandonedCartAdminPage() {
         </div>
       )}
 
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-blue-900 text-sm">
+        <strong>Automated cron:</strong> Recovery emails are sent on a schedule by the server
+        (POST <code className="text-xs bg-blue-100 px-1 rounded">/api/cron/abandoned-cart</code> with{' '}
+        <code className="text-xs bg-blue-100 px-1 rounded">CRON_SECRET</code>). Use &ldquo;Run Recovery Now&rdquo; below to
+        trigger a manual run. Ensure both the module and &ldquo;Send recovery emails&rdquo; are enabled.
+      </div>
+
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-1 bg-white rounded-xl border border-gray-200 p-6 space-y-5">
           <h2 className="text-lg font-bold text-gray-900">Recovery Settings</h2>

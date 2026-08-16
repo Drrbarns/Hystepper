@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
+import { trackAddToCart } from '@/components/TrackingScripts';
 
 export type CartItem = {
     id: string;
@@ -125,6 +126,13 @@ export function CartProvider({ children }: { children: ReactNode }) {
         });
 
         setIsCartOpen(true); // Open cart when item is added
+
+        trackAddToCart({
+            id: newItem.id,
+            name: newItem.name,
+            price: Number(newItem.price) || 0,
+            quantity: Math.max(1, Number(newItem.quantity) || 1),
+        });
     };
 
     const removeFromCart = (itemId: string, variant?: string) => {

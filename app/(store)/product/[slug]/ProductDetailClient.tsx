@@ -15,6 +15,7 @@ import { useCart } from '@/context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
 import { sortSizes } from '@/lib/sort-sizes';
 import { fetchStorePromotions, salePrice } from '@/lib/promotions';
+import { trackViewContent } from '@/components/TrackingScripts';
 
 function isLightColor(hex: string | null): boolean {
   if (!hex || typeof hex !== 'string') return false;
@@ -87,6 +88,7 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
   // without pulling in a full carousel library.
   const touchStartXRef = useRef<number | null>(null);
   const touchStartYRef = useRef<number | null>(null);
+  const viewContentTrackedRef = useRef(false);
   const SWIPE_THRESHOLD_PX = 40;
 
   const goToImage = (next: number) => {
@@ -327,9 +329,20 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
     }
 
     if (slug) {
+      viewContentTrackedRef.current = false;
       fetchProduct();
     }
   }, [slug]);
+
+  useEffect(() => {
+    if (!product || viewContentTrackedRef.current) return;
+    viewContentTrackedRef.current = true;
+    trackViewContent({
+      id: product.id,
+      name: product.name,
+      price: Number(product.price) || 0,
+    });
+  }, [product]);
 
   const [showSizeError, setShowSizeError] = useState(false);
   const [showColorError, setShowColorError] = useState(false);
@@ -580,7 +593,7 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
 
   const siteUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://hystepper.com';
   const categoryHref = product.categorySlug
-    ? `/shop?category=${encodeURIComponent(product.categorySlug)}`
+    ? `/categories/${encodeURIComponent(product.categorySlug)}`
     : `/categories/${encodeURIComponent(String(product.category || 'shop').toLowerCase())}`;
   const breadcrumbSchema = generateBreadcrumbSchema([
     { name: 'Home', url: siteUrl },
