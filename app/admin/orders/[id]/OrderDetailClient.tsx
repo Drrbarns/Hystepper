@@ -369,14 +369,12 @@ export default function OrderDetailClient({ orderId }: OrderDetailClientProps) {
     'processing', 'packed', 'packaging_for_delivery', 'shipped', 'delivered', 'completed',
   ];
   const afterPacked = ['packed', 'packaging_for_delivery', 'shipped', 'delivered', 'completed'];
-  const afterPackaging = ['packaging_for_delivery', 'shipped', 'delivered', 'completed'];
   const afterShipped = ['shipped', 'delivered', 'completed'];
   const timeline = [
     { status: 'Order Placed', date: new Date(order.created_at).toLocaleString(), completed: true },
     { status: 'Payment', date: order.payment_status, completed: order.payment_status === 'paid' || order.metadata?.pos_sale === true },
     { status: 'Processing', date: '', completed: afterProcessing.includes(order.status) },
     { status: 'Packed', date: '', completed: afterPacked.includes(order.status) },
-    { status: 'Packaging for Delivery', date: '', completed: afterPackaging.includes(order.status) },
     { status: 'Shipped', date: '', completed: afterShipped.includes(order.status) },
     { status: 'Delivered', date: '', completed: ['delivered', 'completed'].includes(order.status) },
   ];

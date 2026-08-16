@@ -115,6 +115,12 @@ export default function AdminPromotionsPage() {
       const { error } = await supabase.from('store_settings').upsert(updates, { onConflict: 'key' });
       if (error) throw error;
 
+      // Keep customer-facing expiry dates in sync when the period changes
+      const { error: expiryErr } = await supabase.rpc('recalc_loyalty_expiry');
+      if (expiryErr) {
+        console.warn('Loyalty expiry recalc failed:', expiryErr);
+      }
+
       try {
         sessionStorage.removeItem('hy_cms_settings');
       } catch {

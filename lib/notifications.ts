@@ -467,16 +467,11 @@ export async function sendOrderStatusUpdate(order: any, newStatus: string) {
         smsMessage = trackingNumber
             ? `Hi ${name}, order #${orderRef} has been shipped. Tracking: ${trackingNumber}. Track: ${trackingUrl}`
             : `Hi ${name}, order #${orderRef} has been shipped. Track: ${trackingUrl}`;
-    } else if (newStatus === 'packed' || newStatus === 'packaged') {
+    } else if (newStatus === 'packed' || newStatus === 'packaged' || newStatus === 'packaging_for_delivery') {
         emailMessage = `Your order #${orderRef} has been packed and is being prepared for delivery.`;
         smsMessage = trackingNumber
             ? `Hi ${name}, order #${orderRef} has been packed. Tracking: ${trackingNumber}. Track: ${trackingUrl}`
             : `Hi ${name}, order #${orderRef} has been packed and is being prepared for delivery. Track: ${trackingUrl}`;
-    } else if (newStatus === 'packaging_for_delivery') {
-        emailMessage = `Your order #${orderRef} is being packaged for delivery.`;
-        smsMessage = trackingNumber
-            ? `Hi ${name}, order #${orderRef} is being packaged for delivery. Tracking: ${trackingNumber}. Track: ${trackingUrl}`
-            : `Hi ${name}, order #${orderRef} is being packaged for delivery. Track: ${trackingUrl}`;
     } else if (newStatus === 'dispatched_to_rider' || newStatus === 'out_for_delivery') {
         emailMessage = `Your order #${orderRef} is with the rider and on its way to you.`;
         smsMessage = trackingNumber
@@ -511,7 +506,7 @@ export async function sendOrderStatusUpdate(order: any, newStatus: string) {
         processing: { icon: '&#9881;', color: '#2563eb', bg: '#eff6ff', label: 'Processing' },
         packed: { icon: '&#128230;', color: '#3730a3', bg: '#eef2ff', label: 'Packed' },
         packaged: { icon: '&#128230;', color: '#3730a3', bg: '#eef2ff', label: 'Packed' },
-        packaging_for_delivery: { icon: '&#128230;', color: '#0369a1', bg: '#e0f2fe', label: 'Packaging for Delivery' },
+        packaging_for_delivery: { icon: '&#128230;', color: '#3730a3', bg: '#eef2ff', label: 'Packed' },
         shipped: { icon: '&#128666;', color: '#047857', bg: '#ecfdf5', label: 'Shipped' },
         dispatched_to_rider: { icon: '&#128101;', color: '#4f46e5', bg: '#eef2ff', label: 'Out for Delivery' },
         out_for_delivery: { icon: '&#128666;', color: '#4f46e5', bg: '#eef2ff', label: 'Out for Delivery' },

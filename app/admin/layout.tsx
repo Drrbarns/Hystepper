@@ -107,7 +107,10 @@ export default function AdminLayout({
 
       setUser(session.user);
       setIsAuthenticated(true);
-      document.cookie = 'admin_session=1; path=/; max-age=86400; SameSite=Lax';
+      // Lets middleware allow storefront preview while maintenance_mode is on.
+      document.cookie =
+        'admin_session=1; path=/; max-age=86400; SameSite=Lax' +
+        (window.location.protocol === 'https:' ? '; Secure' : '');
 
       // Check profile role — 'admin' = super admin with full access
       const { data: profileRow } = await supabase
@@ -238,7 +241,14 @@ export default function AdminLayout({
 
     supabase.from('store_settings').select('key, value').eq('key', 'maintenance_mode').then(({ data }) => {
       data?.forEach((row: { key: string; value: unknown }) => {
-        if (row.key === 'maintenance_mode') setMaintenanceEnabled(String(row.value) === 'true');
+        if (row.key === 'maintenance_mode') {
+          const raw = row.value;
+          const on =
+            raw === true ||
+            raw === 1 ||
+            String(raw).trim().replace(/^"+|"+$/g, '').toLowerCase() === 'true';
+          setMaintenanceEnabled(on);
+        }
       });
     });
   }, []);
@@ -274,10 +284,12 @@ export default function AdminLayout({
     const next = !maintenanceEnabled;
     setMaintenanceToggling(true);
     try {
-      await supabase.from('store_settings').upsert(
-        { key: 'maintenance_mode', value: next ? 'true' : 'false', updated_at: new Date().toISOString() },
+      const { error } = await supabase.from('store_settings').upsert(
+        // Store as real JSON boolean so middleware + UI parse consistently
+        { key: 'maintenance_mode', value: next, updated_at: new Date().toISOString() },
         { onConflict: 'key' }
       );
+      if (error) throw error;
       setMaintenanceEnabled(next);
     } catch (err) {
       console.error('Failed to toggle maintenance:', err);

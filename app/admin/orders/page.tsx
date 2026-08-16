@@ -325,7 +325,6 @@ export default function AdminOrdersPage() {
     { label: 'Pending', count: 0, status: 'pending' },
     { label: 'Processing', count: 0, status: 'processing' },
     { label: 'Packed', count: 0, status: 'packed' },
-    { label: 'Packaging', count: 0, status: 'packaging_for_delivery' },
     { label: 'Shipped', count: 0, status: 'shipped' },
     { label: 'Delivered', count: 0, status: 'delivered' },
     { label: 'Returned', count: 0, status: 'returned' },
@@ -393,8 +392,11 @@ export default function AdminOrdersPage() {
       { label: 'All Orders', count: sourceOrders.length, status: 'all' },
       { label: 'Pending', count: sourceOrders.filter(o => o.status === 'pending').length, status: 'pending' },
       { label: 'Processing', count: sourceOrders.filter(o => o.status === 'processing').length, status: 'processing' },
-      { label: 'Packed', count: sourceOrders.filter(o => o.status === 'packed').length, status: 'packed' },
-      { label: 'Packaging', count: sourceOrders.filter(o => o.status === 'packaging_for_delivery').length, status: 'packaging_for_delivery' },
+      {
+        label: 'Packed',
+        count: sourceOrders.filter(o => o.status === 'packed' || o.status === 'packaging_for_delivery').length,
+        status: 'packed',
+      },
       { label: 'Shipped', count: sourceOrders.filter(o => o.status === 'shipped').length, status: 'shipped' },
       { label: 'Delivered', count: sourceOrders.filter(o => o.status === 'delivered').length, status: 'delivered' },
       { label: 'Returned', count: sourceOrders.filter(o => o.status === 'returned').length, status: 'returned' },
@@ -768,7 +770,10 @@ export default function AdminOrdersPage() {
     const matchesSearch = orderId.includes(searchQuery.toLowerCase()) ||
       customerName.includes(searchQuery.toLowerCase()) ||
       customerEmail.includes(searchQuery.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
+    const matchesStatus =
+      statusFilter === 'all' ||
+      order.status === statusFilter ||
+      (statusFilter === 'packed' && order.status === 'packaging_for_delivery');
     return matchesSearch && matchesStatus;
   }).sort((a, b) => {
     if (sortBy === 'total') return (b.total || 0) - (a.total || 0);
@@ -1089,12 +1094,6 @@ export default function AdminOrdersPage() {
                 className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors whitespace-nowrap cursor-pointer"
               >
                 Mark Packed
-              </button>
-              <button
-                onClick={() => handleBulkAction('Mark as Packaging for Delivery', 'packaging_for_delivery')}
-                className="px-3 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-sm font-medium transition-colors whitespace-nowrap cursor-pointer"
-              >
-                Mark Packaging
               </button>
               <button
                 onClick={() => handleBulkAction('Mark as Shipped', 'shipped')}

@@ -39,7 +39,7 @@ export default function LoyaltyPage() {
         const [pointsRes, txRes] = await Promise.all([
           supabase
             .from('loyalty_points')
-            .select('points, lifetime_earned, expires_at')
+            .select('points, lifetime_earned, expires_at, updated_at')
             .eq('user_id', session.user.id)
             .single(),
           supabase
@@ -53,7 +53,15 @@ export default function LoyaltyPage() {
         if (pointsRes.data) {
           setPoints(pointsRes.data.points || 0);
           setLifetime(pointsRes.data.lifetime_earned || 0);
-          setExpiresAt(pointsRes.data.expires_at || null);
+          // Prefer live settings period over a stale stored expires_at
+          const anchor = pointsRes.data.updated_at || pointsRes.data.expires_at;
+          if (anchor && promotions.loyaltyExpiryMonths > 0) {
+            const d = new Date(pointsRes.data.updated_at || Date.now());
+            d.setMonth(d.getMonth() + promotions.loyaltyExpiryMonths);
+            setExpiresAt(d.toISOString());
+          } else {
+            setExpiresAt(pointsRes.data.expires_at || null);
+          }
         }
         if (txRes.data) setTransactions(txRes.data);
       } catch (err) {

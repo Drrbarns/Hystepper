@@ -4,7 +4,6 @@ export const ORDER_STATUS_OPTIONS = [
   'pending',
   'processing',
   'packed',
-  'packaging_for_delivery',
   'shipped',
   'delivered',
   'returned',
@@ -18,7 +17,8 @@ const LABELS: Record<string, string> = {
   awaiting_payment: 'Awaiting Payment',
   processing: 'Processing',
   packed: 'Packed',
-  packaging_for_delivery: 'Packaging for Delivery',
+  // Legacy alias — kept for display of old rows until migrated.
+  packaging_for_delivery: 'Packed',
   shipped: 'Shipped',
   delivered: 'Delivered',
   completed: 'Completed',
@@ -32,7 +32,7 @@ export const ORDER_STATUS_COLORS: Record<string, string> = {
   awaiting_payment: 'bg-gray-100 text-gray-700 border-gray-200',
   processing: 'bg-blue-100 text-blue-700 border-blue-200',
   packed: 'bg-indigo-100 text-indigo-800 border-indigo-200',
-  packaging_for_delivery: 'bg-sky-100 text-sky-800 border-sky-200',
+  packaging_for_delivery: 'bg-indigo-100 text-indigo-800 border-indigo-200',
   shipped: 'bg-purple-100 text-purple-700 border-purple-200',
   delivered: 'bg-emerald-100 text-emerald-700 border-emerald-200',
   completed: 'bg-emerald-100 text-emerald-800 border-emerald-200',
@@ -54,12 +54,18 @@ export function formatOrderStatus(status: string | null | undefined): string {
 export const PACKING_LIST_STATUSES = ['processing', 'packed'] as const;
 
 /** Optional later stages on the packing list when “include shipped” is on. */
-export const PACKING_LIST_LATE_STATUSES = ['packaging_for_delivery', 'shipped'] as const;
+export const PACKING_LIST_LATE_STATUSES = ['shipped'] as const;
 
 /** Can be assigned to a rider / delivery queue. */
 export const DELIVERY_ASSIGNABLE_STATUSES = [
   'processing',
   'packed',
-  'packaging_for_delivery',
   'shipped',
 ] as const;
+
+/** Normalize legacy packaging_for_delivery → packed. */
+export function normalizeOrderStatus(status: string | null | undefined): string {
+  if (!status) return 'pending';
+  if (status === 'packaging_for_delivery' || status === 'packaged') return 'packed';
+  return status;
+}

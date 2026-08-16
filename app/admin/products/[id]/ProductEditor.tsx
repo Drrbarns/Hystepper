@@ -124,13 +124,23 @@ function mergeBuilderVariants(
     return !canPruneBySize || sizeSet.has(norm(v._size || v.name));
   });
 
-  const byName = new Set(kept.map(v => v.name));
-  const result = [...kept];
+  const byKey = new Map<string, any>();
+  const keyOf = (v: any) => {
+    if (mode === 'size_color') return `${variantSize(v)}||${variantColor(v)}`;
+    if (mode === 'color_only') return `||${variantColor(v)}`;
+    return `${norm(v._size || v.name)}||`;
+  };
+  for (const v of kept) {
+    const k = keyOf(v);
+    if (!byKey.has(k)) byKey.set(k, v);
+  }
+  const result = [...byKey.values()];
   let seq = 0;
-  const ensure = (name: string, build: () => any) => {
-    if (byName.has(name)) return;
-    byName.add(name);
-    result.push(build());
+  const ensure = (key: string, build: () => any) => {
+    if (byKey.has(key)) return;
+    const row = build();
+    byKey.set(key, row);
+    result.push(row);
   };
   const tempId = () => `temp-${Date.now()}-${seq++}-${Math.random()}`;
 
@@ -138,7 +148,7 @@ function mergeBuilderVariants(
     for (const size of sizes) {
       for (const color of activeColors) {
         const name = `${size} / ${color.name}`;
-        ensure(name, () => ({
+        ensure(`${norm(size)}||${norm(color.name)}`, () => ({
           id: tempId(), name, option1: size, option2: color.name,
           option3: color.image_url ? null : (color.hex || null),
           image_url: color.image_url || null, price: basePrice, quantity: 0,
@@ -149,14 +159,14 @@ function mergeBuilderVariants(
     }
   } else if (mode === 'size_only') {
     for (const size of sizes) {
-      ensure(size, () => ({
+      ensure(`${norm(size)}||`, () => ({
         id: tempId(), name: size, option1: size, option2: null, option3: null, image_url: null,
         price: basePrice, quantity: 0, _size: size, _disabled: false, _appearanceMode: 'color',
       }));
     }
   } else {
     for (const color of activeColors) {
-      ensure(color.name, () => ({
+      ensure(`||${norm(color.name)}`, () => ({
         id: tempId(), name: color.name, option2: color.name,
         option3: color.image_url ? null : (color.hex || null),
         image_url: color.image_url || null, price: basePrice, quantity: 0,
@@ -703,10 +713,43 @@ export default function ProductEditor({ productId }: { productId: string }) {
         }
       }
 
-      // 3. Persist variants — update existing rows, INSERT new sizes (36/42 etc.)
-      // separately so a partial upsert can't silently drop brand-new combinations.
-      const toUpdate = variantsToUpsert.filter(v => v.id);
-      const toInsert = variantsToUpsert.filter(v => !v.id);
+      // 3. Persist variants — update existing rows, INSERT only genuinely new
+      // combinations. Before insert, re-check DB for matching size/colour so a
+      // second Save (or name casing mismatch) cannot double rows.
+      const comboKey = (row: { option1?: string | null; option2?: string | null; name?: string | null }) => {
+        const size = String(row.option1 || '').trim().toLowerCase()
+          || (String(row.name || '').includes(' / ')
+            ? String(row.name).split(' / ')[0].trim().toLowerCase()
+            : String(row.name || '').trim().toLowerCase());
+        const color = String(row.option2 || '').trim().toLowerCase()
+          || (String(row.name || '').includes(' / ')
+            ? String(row.name).split(' / ').slice(1).join(' / ').trim().toLowerCase()
+            : '');
+        return `${size}||${color}`;
+      };
+
+      const { data: dbVariants } = await supabase
+        .from('product_variants')
+        .select('id, name, option1, option2')
+        .eq('product_id', targetId);
+      const dbByCombo = new Map(
+        (dbVariants || []).map((r: any) => [comboKey(r), String(r.id)]),
+      );
+
+      const toUpdate: typeof variantsToUpsert = [];
+      const toInsert: typeof variantsToUpsert = [];
+      for (const v of variantsToUpsert) {
+        if (v.id) {
+          toUpdate.push(v);
+          continue;
+        }
+        const existingId = dbByCombo.get(comboKey(v));
+        if (existingId) {
+          toUpdate.push({ ...v, id: existingId });
+        } else {
+          toInsert.push(v);
+        }
+      }
       let variantSaveFailed = false;
 
       if (toUpdate.length > 0) {

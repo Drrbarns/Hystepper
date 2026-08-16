@@ -1,10 +1,15 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
+/**
+ * Original maintenance behaviour (restored):
+ * - When maintenance_mode is on, storefront redirects to /maintenance
+ * - Logged-in admins (admin_session cookie set by /admin) can still preview the site
+ * - Admin panel itself is never blocked
+ * - On settings-read failure, fail open so a DB blip does not lock the store
+ */
 let cachedMaintenance: { value: boolean; at: number } | null = null;
 const CACHE_TTL_MS = 15_000;
-/** Keep last known value for much longer if PostgREST is briefly unreachable. */
-const STALE_OK_MS = 10 * 60_000;
 
 function parseMaintenanceFlag(raw: unknown): boolean {
   if (raw === true || raw === 1) return true;
@@ -44,46 +49,41 @@ async function isMaintenanceModeEnabled(): Promise<boolean> {
     cachedMaintenance = { value: enabled, at: now };
     return enabled;
   } catch {
-    // Do NOT fail open: if we recently knew maintenance was on, keep blocking.
-    if (cachedMaintenance && now - cachedMaintenance.at < STALE_OK_MS) {
-      return cachedMaintenance.value;
-    }
-    // Unknown / cold start with DB errors — don't lock the whole store.
-    // The forgeable admin_session bypass is removed; that was the real hole.
-    return cachedMaintenance?.value ?? false;
+    // Fail open — never lock the whole storefront because PostgREST blipped.
+    return false;
   }
 }
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Never gate backend gateway paths, admin, or static assets.
-  // Admin UI stays reachable so staff can turn maintenance off.
-  // Storefront preview during maintenance is intentionally blocked for everyone
-  // (including anyone with a forgeable client-side admin_session cookie).
+  // Never gate backend gateway paths or static assets.
   if (
     pathname.startsWith('/rest/') ||
     pathname.startsWith('/auth/') ||
     pathname.startsWith('/storage/') ||
     pathname.startsWith('/api/') ||
     pathname.startsWith('/_next/') ||
-    pathname.startsWith('/admin') ||
     pathname === '/maintenance' ||
     pathname.startsWith('/favicon') ||
     /\.[^/]+$/.test(pathname)
   ) {
-    if (pathname.startsWith('/admin')) {
-      const response = NextResponse.next();
-      response.headers.set('X-Robots-Tag', 'noindex, nofollow');
-      response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate');
-      return response;
-    }
     return NextResponse.next();
+  }
+
+  if (pathname.startsWith('/admin')) {
+    const response = NextResponse.next();
+    response.headers.set('X-Robots-Tag', 'noindex, nofollow');
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+    return response;
   }
 
   const inMaintenance = await isMaintenanceModeEnabled();
   if (inMaintenance) {
-    return NextResponse.redirect(new URL('/maintenance', request.url));
+    const isAdmin = request.cookies.get('admin_session')?.value === '1';
+    if (!isAdmin) {
+      return NextResponse.redirect(new URL('/maintenance', request.url));
+    }
   }
 
   const response = NextResponse.next();

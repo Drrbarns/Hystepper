@@ -100,9 +100,9 @@ export default function OrderHistory() {
       case 'completed':
         return 'bg-green-100 text-green-700';
       case 'shipped':
-      case 'packaging_for_delivery':
         return 'bg-blue-100 text-blue-700';
       case 'packed':
+      case 'packaging_for_delivery':
         return 'bg-indigo-100 text-indigo-700';
       case 'processing':
         return 'bg-yellow-100 text-yellow-700';
