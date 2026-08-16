@@ -1,9 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { STORE_MODULES, getModuleDef } from '@/lib/store-modules';
 
-interface Module {
+interface ModuleCard {
   id: string;
   name: string;
   description: string;
@@ -11,6 +13,7 @@ interface Module {
   color: string;
   enabled: boolean;
   category: string;
+  adminPath?: string;
 }
 
 const colorMap: Record<string, string> = {
@@ -22,88 +25,14 @@ const colorMap: Record<string, string> = {
   amber: 'bg-amber-100 text-amber-600',
   yellow: 'bg-yellow-100 text-yellow-600',
   indigo: 'bg-indigo-100 text-indigo-600',
-  gray: 'bg-gray-100 text-gray-600'
+  gray: 'bg-gray-100 text-gray-600',
 };
 
 export default function ModulesPage() {
   const [loading, setLoading] = useState(true);
-
-  // Base definitions of modules
-  const [modules, setModules] = useState<Module[]>([
-    {
-      id: 'notifications',
-      name: 'Marketing Notifications',
-      description: 'Send Email and SMS campaigns to customers',
-      icon: 'ri-notification-3-line',
-      color: 'red',
-      enabled: false,
-      category: 'Marketing'
-    },
-    {
-      id: 'cms',
-      name: 'CMS / Pages',
-      description: 'Manage website content, policies, and landing pages',
-      icon: 'ri-file-list-line',
-      color: 'blue',
-      enabled: false,
-      category: 'Content'
-    },
-    {
-      id: 'homepage',
-      name: 'Homepage Config',
-      description: 'Customize homepage sections and banners',
-      icon: 'ri-home-gear-line',
-      color: 'purple',
-      enabled: false,
-      category: 'Content'
-    },
-    {
-      id: 'blog',
-      name: 'Blog Management',
-      description: 'Create and manage blog posts',
-      icon: 'ri-article-line',
-      color: 'emerald',
-      enabled: false,
-      category: 'Marketing'
-    },
-    {
-      id: 'customer-insights',
-      name: 'Customer Insights',
-      description: 'Advanced analytics on customer behavior',
-      icon: 'ri-user-search-line',
-      color: 'orange',
-      enabled: false,
-      category: 'Analytics'
-    },
-    {
-      id: 'flash-sales',
-      name: 'Flash Sales',
-      description: 'Time-limited promotional sales with countdown timers',
-      icon: 'ri-flashlight-line',
-      color: 'amber',
-      enabled: false,
-      category: 'Marketing'
-    },
-    {
-      id: 'loyalty-program',
-      name: 'Loyalty Program',
-      description: 'Points and rewards system for customer retention',
-      icon: 'ri-trophy-line',
-      color: 'yellow',
-      enabled: false,
-      category: 'Marketing'
-    },
-    {
-      id: 'pwa-settings',
-      name: 'PWA / Mobile App',
-      description: 'Configure Progressive Web App settings',
-      icon: 'ri-smartphone-line',
-      color: 'indigo',
-      enabled: false,
-      category: 'Mobile'
-    }
-  ]);
-
+  const [modules, setModules] = useState<ModuleCard[]>(
+    STORE_MODULES.map((m) => ({ ...m, enabled: m.defaultEnabled ?? false }))
+  );
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
 
@@ -116,12 +45,15 @@ export default function ModulesPage() {
       const { data, error } = await supabase.from('store_modules').select('*');
       if (error) throw error;
 
-      if (data) {
-        setModules(prev => prev.map(m => {
-          const dbState = data.find((d: any) => d.id === m.id);
-          return dbState ? { ...m, enabled: dbState.enabled } : m;
-        }));
-      }
+      setModules(
+        STORE_MODULES.map((def) => {
+          const dbState = data?.find((d: { id: string; enabled?: boolean }) => d.id === def.id);
+          return {
+            ...def,
+            enabled: dbState?.enabled ?? def.defaultEnabled ?? false,
+          };
+        })
+      );
     } catch (err) {
       console.error('Error fetching modules:', err);
     } finally {
@@ -131,32 +63,42 @@ export default function ModulesPage() {
 
   const toggleModule = async (id: string, currentState: boolean) => {
     const newState = !currentState;
+    const def = getModuleDef(id);
 
-    // Optimistic Update
-    setModules(modules.map(m =>
-      m.id === id ? { ...m, enabled: newState } : m
-    ));
+    setModules((prev) =>
+      prev.map((m) => (m.id === id ? { ...m, enabled: newState } : m))
+    );
 
     try {
       const { error } = await supabase
         .from('store_modules')
         .upsert({ id, enabled: newState, updated_at: new Date().toISOString() });
 
-      if (error) {
-        throw error;
+      if (error) throw error;
+
+      if (id === 'abandoned-cart') {
+        await supabase.from('store_settings').upsert(
+          {
+            key: 'abandoned_cart_enabled',
+            value: newState,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'key' }
+        );
       }
 
       window.location.reload();
-
     } catch (err) {
       console.error('Error updating module:', err);
       alert('Failed to update settings');
+      setModules((prev) =>
+        prev.map((m) => (m.id === id ? { ...m, enabled: currentState } : m))
+      );
     }
   };
 
-  const categories = ['all', ...Array.from(new Set(modules.map(m => m.category)))];
+  const categories = ['all', ...Array.from(new Set(modules.map((m) => m.category)))];
 
-  /* Lock Screen Logic */
   const [isLocked, setIsLocked] = useState(true);
   const [pin, setPin] = useState('');
   const [pinError, setPinError] = useState('');
@@ -206,26 +148,24 @@ export default function ModulesPage() {
               Unlock Dashboard
             </button>
           </form>
-
         </div>
       </div>
     );
   }
 
-  const filteredModules = modules.filter(module => {
-    const matchesSearch = module.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+  const filteredModules = modules.filter((module) => {
+    const matchesSearch =
+      module.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       module.description.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = filterCategory === 'all' || module.category === filterCategory;
     return matchesSearch && matchesCategory;
   });
 
   const groupedModules = filteredModules.reduce((acc, module) => {
-    if (!acc[module.category]) {
-      acc[module.category] = [];
-    }
+    if (!acc[module.category]) acc[module.category] = [];
     acc[module.category].push(module);
     return acc;
-  }, {} as Record<string, typeof modules>);
+  }, {} as Record<string, ModuleCard[]>);
 
   return (
     <div className="min-h-screen bg-gray-50 p-8">
@@ -250,7 +190,9 @@ export default function ModulesPage() {
               onChange={(e) => setFilterCategory(e.target.value)}
               className="p-2 border border-gray-300 rounded-lg outline-none"
             >
-              {categories.map(c => <option key={c} value={c}>{c === 'all' ? 'All Categories' : c}</option>)}
+              {categories.map((c) => (
+                <option key={c} value={c}>{c === 'all' ? 'All Categories' : c}</option>
+              ))}
             </select>
           </div>
         </div>
@@ -263,8 +205,11 @@ export default function ModulesPage() {
               <div key={category}>
                 <h2 className="text-xl font-bold text-gray-800 mb-4 border-l-4 border-emerald-500 pl-3">{category}</h2>
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {items.map(module => (
-                    <div key={module.id} className={`bg-white rounded-xl border-2 p-6 transition-all ${module.enabled ? 'border-emerald-500 shadow-md' : 'border-gray-200 opacity-75'}`}>
+                  {items.map((module) => (
+                    <div
+                      key={module.id}
+                      className={`bg-white rounded-xl border-2 p-6 transition-all ${module.enabled ? 'border-emerald-500 shadow-md' : 'border-gray-200 opacity-75'}`}
+                    >
                       <div className="flex justify-between items-start mb-4">
                         <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${colorMap[module.color] || 'bg-gray-100 text-gray-600'}`}>
                           <i className={`${module.icon} text-2xl`}></i>
@@ -282,6 +227,14 @@ export default function ModulesPage() {
                         <span className={`text-xs font-bold px-2 py-1 rounded-full ${module.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600'}`}>
                           {module.enabled ? 'Enabled' : 'Disabled'}
                         </span>
+                        {module.adminPath && module.enabled && (
+                          <Link
+                            href={module.adminPath}
+                            className="text-sm font-semibold text-emerald-700 hover:text-emerald-900"
+                          >
+                            Manage →
+                          </Link>
+                        )}
                       </div>
                     </div>
                   ))}

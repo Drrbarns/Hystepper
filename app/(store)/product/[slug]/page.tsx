@@ -1,6 +1,7 @@
 import ProductDetailClient from './ProductDetailClient';
 import { createClient } from '@supabase/supabase-js';
 import type { Metadata } from 'next';
+import { isModuleEnabledServer } from '@/lib/store-modules-server';
 
 const SITE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://hystepper.vercel.app';
 
@@ -11,7 +12,7 @@ async function getProduct(slug: string) {
   );
   const { data } = await supabase
     .from('products')
-    .select('name, description, price, compare_at_price, product_images(url, position), categories(name, slug)')
+    .select('name, description, seo_title, seo_description, price, compare_at_price, product_images(url, position), categories(name, slug)')
     .eq('slug', slug)
     .order('position', { foreignTable: 'product_images', ascending: true })
     .limit(1, { foreignTable: 'product_images' })
@@ -22,31 +23,42 @@ async function getProduct(slug: string) {
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
   const product = await getProduct(slug);
+  const seoEnabled = await isModuleEnabledServer('on-page-seo');
 
   if (!product) {
     return { title: 'Product Not Found | Hy_stepper' };
   }
 
   const mainImage = product.product_images
-    ?.sort((a: any, b: any) => (a.position || 0) - (b.position || 0))[0]?.url
+    ?.sort((a: { position?: number }, b: { position?: number }) => (a.position || 0) - (b.position || 0))[0]?.url
     || `${SITE_URL}/og-share.png?v=20260813b`;
 
   const rawDesc = product.description
     ? product.description.replace(/<[^>]+>/g, '').trim()
     : '';
 
-  const description = rawDesc
-    ? rawDesc.substring(0, 155) + (rawDesc.length > 155 ? '…' : '')
-    : `Shop ${product.name} at Hy_stepper. Premium footwear & accessories delivered across Ghana.`;
+  const seoDescription = seoEnabled && product.seo_description
+    ? String(product.seo_description).trim()
+    : '';
+
+  const description = seoDescription
+    ? seoDescription.substring(0, 155) + (seoDescription.length > 155 ? '…' : '')
+    : rawDesc
+      ? rawDesc.substring(0, 155) + (rawDesc.length > 155 ? '…' : '')
+      : `Shop ${product.name} at Hy_stepper. Premium footwear & accessories delivered across Ghana.`;
+
+  const pageTitle = seoEnabled && product.seo_title
+    ? String(product.seo_title).trim()
+    : `${product.name} — Shop Now`;
 
   const canonicalUrl = `${SITE_URL}/product/${slug}`;
 
   return {
-    title: `${product.name} — Shop Now`,
+    title: pageTitle,
     description,
     alternates: { canonical: canonicalUrl },
     openGraph: {
-      title: `${product.name} | Hy_stepper`,
+      title: seoEnabled && product.seo_title ? String(product.seo_title).trim() : `${product.name} | Hy_stepper`,
       description,
       type: 'website',
       url: canonicalUrl,
@@ -63,7 +75,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     },
     twitter: {
       card: 'summary_large_image',
-      title: `${product.name} | Hy_stepper`,
+      title: seoEnabled && product.seo_title ? String(product.seo_title).trim() : `${product.name} | Hy_stepper`,
       description,
       images: [mainImage],
       creator: '@hystepper',

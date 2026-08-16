@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { isModuleEnabledServer } from '@/lib/store-modules-server';
 import { requireStaff } from '@/lib/require-staff';
 import { escapeHtml, isValidEmail } from '@/lib/sanitize';
 import {
@@ -173,6 +174,11 @@ export async function POST(request: Request) {
             const userEmail = String(user?.email || '').trim().toLowerCase();
             if (!userEmail || userEmail !== String(payload.email).trim().toLowerCase()) {
                 return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+            }
+
+            const welcomeEnabled = await isModuleEnabledServer('welcome-emails');
+            if (!welcomeEnabled) {
+                return NextResponse.json({ success: true, skipped: true, message: 'Welcome emails module disabled' });
             }
 
             await sendWelcomeMessage(payload);

@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase';
 import dynamic from 'next/dynamic';
 import ProductCard from '@/components/ProductCard';
 const ProductReviews = dynamic(() => import('@/components/ProductReviews'), { ssr: false });
+const FrequentlyBoughtTogether = dynamic(() => import('@/components/FrequentlyBoughtTogether'), { ssr: false });
 import { StructuredData, generateProductSchema, generateBreadcrumbSchema } from '@/components/SEOHead';
 import { notFound } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
@@ -76,6 +77,7 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
     if (wantsReview) setActiveTab('reviews');
   }, [searchParams]);
   const [relatedProducts, setRelatedProducts] = useState<any[]>([]);
+  const [bundlesModuleEnabled, setBundlesModuleEnabled] = useState(false);
   const [notifyEmail, setNotifyEmail] = useState('');
   const [notifySubmitted, setNotifySubmitted] = useState(false);
   const [notifyLoading, setNotifyLoading] = useState(false);
@@ -276,13 +278,20 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
 
         setProduct(transformedProduct);
 
+        const { data: moduleRow } = await supabase
+          .from('store_modules')
+          .select('enabled')
+          .eq('id', 'product-bundles')
+          .maybeSingle();
+        setBundlesModuleEnabled(!!moduleRow?.enabled);
+
         // Default select first size if available
         if (transformedProduct.sizes.length > 0) {
           // Do not auto-select size so validation triggers
           // setSelectedSize(transformedProduct.sizes[0]);
         }
 
-        // Fetch related products (e.g., same category)
+        // Fetch related products when bundles module is off (FBT handles its own list when on)
         if (productData.category_id) {
           const { data: related } = await supabase
             .from('products')
@@ -1245,7 +1254,15 @@ export default function ProductDetailClient({ slug }: { slug: string }) {
           </div>
         </section>
 
-        {relatedProducts.length > 0 && (
+        {product && bundlesModuleEnabled && (
+          <FrequentlyBoughtTogether
+            productId={product.id}
+            categoryId={product.category_id}
+            excludeProductId={product.id}
+          />
+        )}
+
+        {!bundlesModuleEnabled && relatedProducts.length > 0 && (
           <section className="py-24 bg-gray-50 border-t border-gray-100" data-product-shop>
             <div className="max-w-7xl mx-auto px-4 sm:px-6">
               <div className="text-center mb-16">

@@ -1,6 +1,7 @@
 import { Resend } from 'resend';
 import { supabase } from '@/lib/supabase';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { isModuleEnabledServer } from '@/lib/store-modules-server';
 import { escapeHtml, maskPhone, maskEmail } from '@/lib/sanitize';
 
 const resend = new Resend(process.env.RESEND_API_KEY || 'missing_api_key');
@@ -478,7 +479,7 @@ export async function sendOrderStatusUpdate(order: any, newStatus: string) {
             ? `Hi ${name}, order #${orderRef} is with the rider for delivery. Tracking: ${trackingNumber}. Track: ${trackingUrl}`
             : `Hi ${name}, order #${orderRef} is with the rider for delivery. Track: ${trackingUrl}`;
     } else if (newStatus === 'delivered') {
-        emailMessage = `Your order #${orderRef} has been delivered. Enjoy! When you have a moment, we'd love your feedback — tap the button below to leave a review.`;
+        emailMessage = `Your order #${orderRef} has been delivered. Enjoy!`;
         smsMessage = `Hi ${name}, your order #${orderRef} has been delivered. Thanks for shopping with ${BRAND.name}!`;
     } else if (newStatus === 'processing') {
         emailMessage = `We're processing your order #${orderRef} now.`;
@@ -523,10 +524,14 @@ export async function sendOrderStatusUpdate(order: any, newStatus: string) {
 
     // Resolve the review URL once for the delivered status so SMS + email use
     // the same destination (single-product link when possible).
-    const reviewUrl = newStatus === 'delivered'
+    const reviewRequestsEnabled = newStatus === 'delivered'
+        ? await isModuleEnabledServer('review-requests')
+        : false;
+    const reviewUrl = reviewRequestsEnabled
         ? await resolveReviewUrl(id, String(orderRef))
         : '';
-    if (newStatus === 'delivered') {
+    if (newStatus === 'delivered' && reviewRequestsEnabled) {
+        emailMessage = `${emailMessage} When you have a moment, we'd love your feedback — tap the button below to leave a review.`;
         smsMessage = `${smsMessage} Loved it? Leave a quick review: ${reviewUrl}`;
     }
 
@@ -550,7 +555,7 @@ export async function sendOrderStatusUpdate(order: any, newStatus: string) {
 
 <p style="color:#374151;font-size:14px;line-height:1.6;margin:16px 0;">${escapeHtml(emailMessage)}</p>
 
-${newStatus === 'delivered'
+${newStatus === 'delivered' && reviewRequestsEnabled
     ? emailButton('Leave a Review', reviewUrl)
     : emailButton('Track Your Order', trackingUrl)}
 `, `Your order #${orderRef} is now ${sc.label}`),
