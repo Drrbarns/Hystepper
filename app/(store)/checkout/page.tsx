@@ -498,213 +498,61 @@ export default function CheckoutPage() {
     setIsLoading(true);
     setShowPaymentModal(false);
 
-    const authedUser = user;
-
     try {
-      // Last-chance stock check: between the customer opening the payment
-      // modal and clicking "Pay", another shopper may have bought the last
-      // of a variant. We re-check each line against the DB and abort the
-      // order if anything is now unavailable. The cart context's revalidate
-      // routine will also strip the offending items so the customer doesn't
-      // get stuck.
-      const variantIdsToCheck = Array.from(
-        new Set(cart.map(i => i.variantId).filter((v): v is string => typeof v === 'string' && v.length > 0))
-      );
-      const productIdsToCheck = Array.from(new Set(cart.map(i => i.id).filter(Boolean)));
-
-      const [variantStockRes, productStockRes] = await Promise.all([
-        variantIdsToCheck.length > 0
-          ? supabase.from('product_variants').select('id, quantity').in('id', variantIdsToCheck)
-          : Promise.resolve({ data: [] as any[], error: null }),
-        productIdsToCheck.length > 0
-          ? supabase.from('products').select('id, status, quantity, name').in('id', productIdsToCheck)
-          : Promise.resolve({ data: [] as any[], error: null }),
-      ]);
-
-      // Only abort on stock failures if the DB actually answered — a
-      // network blip shouldn't block a legitimate purchase.
-      if (!variantStockRes.error && !productStockRes.error) {
-        const variantStock = new Map((variantStockRes.data || []).map((v: any) => [v.id, Number(v.quantity) || 0]));
-        const productStock = new Map(
-          (productStockRes.data || []).map((p: any) => [p.id, { status: p.status, quantity: Number(p.quantity) || 0, name: p.name }])
-        );
-        const outOfStock = cart.filter(item => {
-          const product = productStock.get(item.id);
-          if (!product || product.status !== 'active') return true;
-          const available = item.variantId
-            ? variantStock.get(item.variantId)
-            : product.quantity;
-          return available == null || available < item.quantity;
-        });
-
-        if (outOfStock.length > 0) {
-          await revalidateCart(); // cleans up the cart UI + toasts
-          const names = outOfStock.slice(0, 2).map(i => `${i.name}${i.variant ? ` (${i.variant})` : ''}`).join(', ');
-          const more = outOfStock.length > 2 ? ` +${outOfStock.length - 2} more` : '';
-          toast.error(
-            outOfStock.length === 1
-              ? `${names} just sold out or is no longer available. We've updated your cart — please review and try again.`
-              : `Some items in your cart are no longer available (${names}${more}). We've updated your cart — please review and try again.`
-          );
-          setIsLoading(false);
-          return;
-        }
+      const { data: { session } } = await supabase.auth.getSession();
+      const authHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (session?.access_token) {
+        authHeaders.Authorization = `Bearer ${session.access_token}`;
       }
 
-      const orderNumber = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-
-      // `orders.email` is NOT NULL in the DB, but the checkout form makes
-      // email optional. For guests who skip it, synthesise a placeholder so
-      // the insert succeeds — receipts go via SMS in that case, and admins
-      // can always reach the customer via the phone field.
-      const cleanedPhoneForEmail = (shippingData.phone || '').replace(/\D/g, '') || 'unknown';
-      const orderEmail =
-        shippingData.email && shippingData.email.includes('@')
-          ? shippingData.email
-          : `guest-${cleanedPhoneForEmail}@hystepper.local`;
-
-      const { data: order, error: orderError } = await supabase
-        .from('orders')
-        .insert([{
-          order_number: orderNumber,
-          user_id: authedUser?.id || null,
-          email: orderEmail,
-          phone: shippingData.phone,
-          status: 'pending',
-          payment_status: 'pending',
-          currency: 'GHS',
-          subtotal: subtotal,
-          tax_total: tax,
-          shipping_total: shippingCost,
-          discount_total: totalDiscount,
-          total: total,
-          shipping_method: selectedMethod?.name || 'standard',
-          payment_method: gateway,
-          payment_option: paymentOption,
-          delivery_notes: deliveryNotes,
-          points_redeemed: pointsToDeduct > 0 ? pointsToDeduct : 0,
-          points_discount: pointsDiscount,
-          shipping_address: shippingData,
-          billing_address: shippingData,
-          metadata: {
-            guest_checkout: !authedUser,
-            first_name: shippingData.firstName,
-            last_name: shippingData.lastName,
+      const checkoutRes = await fetch('/api/checkout/create-order', {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({
+          items: cart.map((item) => ({
+            productId: item.id,
+            variantId: item.variantId || null,
+            quantity: item.quantity,
+          })),
+          shipping: {
+            firstName: shippingData.firstName,
+            lastName: shippingData.lastName,
+            email: shippingData.email,
+            phone: shippingData.phone,
+            address: shippingData.address,
+            city: shippingData.city,
             region: shippingData.region,
-            delivery_zone_id: activeZone?.id || null,
-            delivery_method: selectedMethod?.name || null,
-            delivery_fee_waived: deliveryDiscountEligible && (zoneFreeDelivery || freeByItemCount) ? true : undefined,
-            delivery_fee_discount_percent: deliveryDiscountEligible && zoneDiscountPercent > 0 ? zoneDiscountPercent : undefined,
-            global_delivery_discount_percent: deliveryDiscountEligible && promotions.globalDeliveryDiscountPercent > 0
-              ? promotions.globalDeliveryDiscountPercent
-              : undefined,
-            free_delivery_min_items: deliveryDiscountEligible && freeByItemCount ? promotions.freeDeliveryMinItems : undefined,
-            delivery_discount_blocked: deliveryPromoBlocked || undefined,
-            storewide_sale_percent: storewideDiscount > 0 ? promotions.storewideSalePercent : undefined,
-            storewide_sale_discount: storewideDiscount > 0 ? storewideDiscount : undefined,
-            storewide_sale_name: storewideDiscount > 0 ? (promotions.storewideSaleName || null) : undefined,
-            payable_now: payableNow,
-            delivery_fee_due: deliveryFeeToPayLater,
-            coupon_code: couponApplied?.code || null,
-            coupon_discount: couponDiscount || 0
-          }
-        }])
-        .select()
-        .single();
+            regionType: selectedRegionType,
+          },
+          paymentMethod: gateway,
+          paymentOption,
+          couponCode: couponApplied?.code || couponCode.trim() || undefined,
+          pointsToRedeem: redeemPoints && pointsToDeduct > 0 ? pointsToDeduct : undefined,
+          deliveryNotes,
+          deliveryZoneId: activeZone?.id || undefined,
+          shippingMethodName: selectedMethod?.name || undefined,
+        }),
+      });
 
-      if (orderError) throw orderError;
-
-      // Create Order Items — carry SKU + variant_id so warehouse / POS can pack
-      // the right size/colour and admin order details show a fillable SKU.
-      // IMPORTANT: variant_id MUST go in the column (not only metadata) so the
-      // decrement_order_stock RPC can reduce the correct product_variants row
-      // when payment confirms. Previously we only stored it in metadata, which
-      // is why variant inventory never went down after a paid order.
-      const orderItems = [
-        ...cart.map(item => ({
-          order_id: order.id,
-          product_id: item.id,
-          variant_id: item.variantId || null,
-          product_name: item.name,
-          variant_name: item.variant,
-          sku: item.sku || null,
-          quantity: item.quantity,
-          unit_price: item.price,
-          total_price: item.price * item.quantity,
-          metadata: {
-            image: item.image,
-            slug: item.slug,
-            variant_id: item.variantId || null,
-            // Persist picked options separately so admin order screens can
-            // render Size / Colour as their own pills (legacy orders fall
-            // back to parsing variant_name).
-            size: item.size || null,
-            color: item.color || null,
-          }
-        }))
-      ];
-
-      const { error: itemsError } = await supabase
-        .from('order_items')
-        .insert(orderItems);
-
-      if (itemsError) throw itemsError;
-
-      // Increment coupon usage
-      if (couponApplied) {
-        await supabase
-          .from('coupons')
-          .update({ usage_count: (couponApplied.usage_count || 0) + 1 })
-          .eq('id', couponApplied.id);
+      const checkoutResult = await checkoutRes.json();
+      if (!checkoutRes.ok) {
+        throw new Error(checkoutResult.error || 'Failed to create order');
       }
 
-      // Deduct Points if used
-      if (pointsDiscount > 0 && pointsToDeduct > 0 && user) {
-        await supabase
-          .from('loyalty_points')
-          .update({ points: Math.max(0, loyaltyPoints - pointsToDeduct), updated_at: new Date().toISOString() })
-          .eq('user_id', user.id);
+      const order = checkoutResult.order;
+      const orderNumber = order.order_number;
+      const payableNowFromServer = Number(checkoutResult.payableNow);
 
-        await supabase.from('loyalty_transactions').insert({
-          user_id: user.id,
-          order_id: order.id,
-          amount: -pointsToDeduct,
-          type: 'redemption',
-          description: `Redeemed ${pointsToDeduct} points (GH₵ ${pointsDiscount.toFixed(2)} off) on order ${orderNumber}`
-        });
-      }
-
-      // Order confirmation notifications (email + SMS) are fired from the
-      // payment webhook / verify path once payment is actually confirmed.
-      // Sending them here at order-creation time produced bogus "Hi Customer,
-      // ... #undefined" messages for orders that never paid.
-
-      // Handle Payment
-      if (payableNow <= 0) {
-        // Fully covered by points / coupon — nothing to charge online. Mark the
-        // order as paid and decrement stock right away (no payment webhook will
-        // fire for this path). SECURITY DEFINER RPC so guest + authed both work
-        // under RLS.
-        const { error: finalizeError } = await supabase.rpc('finalize_zero_payment_order', {
-          p_order_id: order.id,
-        });
-        if (finalizeError) {
-          console.error('finalize_zero_payment_order failed for', orderNumber, finalizeError);
-          toast.error('Could not finalize zero-balance order. Please contact support.');
-          return;
-        }
-
-        const { error: stockError } = await supabase.rpc('decrement_order_stock', {
-          order_ref: order.id,
-        });
-        if (stockError) {
-          console.error('decrement_order_stock failed for', orderNumber, stockError);
-        }
-
+      if (payableNowFromServer <= 0) {
         clearCart();
         router.push(`/order-success?order=${orderNumber}`);
         return;
       }
+
+      const orderEmail =
+        shippingData.email && shippingData.email.includes('@')
+          ? shippingData.email
+          : order.email;
 
       let redirectUrl = `/order-success?order=${orderNumber}`;
 
@@ -714,7 +562,6 @@ export default function CheckoutPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             orderId: orderNumber,
-            amount: payableNow,
             customerEmail: orderEmail,
           })
         });
@@ -732,7 +579,6 @@ export default function CheckoutPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             orderId: orderNumber,
-            amount: payableNow,
             customerEmail: orderEmail,
             customerPhone: shippingData.phone
           })

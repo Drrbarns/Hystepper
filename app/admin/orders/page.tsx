@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { adminAuthHeaders } from '@/lib/admin-auth-headers';
 import ProductSalesStats from './ProductSalesStats';
 import PackingList from './PackingList';
 import AdminTableScroll from '@/components/admin/AdminTableScroll';
@@ -556,16 +557,17 @@ export default function AdminOrdersPage() {
 
         // Send Notifications
         const updatedOrders = orders.filter(o => selectedOrders.includes(o.id));
-        updatedOrders.forEach(order => {
+        const notifyHeaders = await adminAuthHeaders();
+        for (const order of updatedOrders) {
           fetch('/api/notifications', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: notifyHeaders,
             body: JSON.stringify({
               type: 'order_updated',
               payload: { order, status: newStatus }
             })
           }).catch(err => console.error('Notification error', err));
-        });
+        }
 
         await fetchOrders();
         setSelectedOrders([]);
@@ -738,7 +740,7 @@ export default function AdminOrdersPage() {
     try {
       const response = await fetch('/api/notifications', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await adminAuthHeaders(),
         body: JSON.stringify({
           type: 'payment_link',
           payload: order

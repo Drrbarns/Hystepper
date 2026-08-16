@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createStorageClient } from "@/server/db/storage";
-import { verifyAccessToken } from "@/server/auth";
+import { isStaffRequest } from "@/lib/require-staff";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -83,20 +83,27 @@ export async function OPTIONS() {
   return cors(new NextResponse(null, { status: 204 }));
 }
 
-export async function POST(req: NextRequest, ctx: Ctx) {
-  const { bucket, path } = await ctx.params;
-  const objectPath = (path || []).join("/");
+async function authorizeStorageMutation(req: NextRequest) {
   const auth = req.headers.get("authorization") || "";
-  const token = auth.replace(/^Bearer\s+/i, "");
-  // Allow service role or any authenticated staff JWT
-  const verified = token ? await verifyAccessToken(token) : null;
+  const token = auth.replace(/^Bearer\s+/i, "").trim();
   const apikey = req.headers.get("apikey") || "";
   const serviceOk =
     !!process.env.SUPABASE_SERVICE_ROLE_KEY &&
     (token === process.env.SUPABASE_SERVICE_ROLE_KEY || apikey === process.env.SUPABASE_SERVICE_ROLE_KEY);
-  if (!verified && !serviceOk) {
+  if (serviceOk) return null;
+
+  const staff = await isStaffRequest(req);
+  if (!staff) {
     return cors(NextResponse.json({ error: "Unauthorized" }, { status: 401 }));
   }
+  return null;
+}
+
+export async function POST(req: NextRequest, ctx: Ctx) {
+  const { bucket, path } = await ctx.params;
+  const objectPath = (path || []).join("/");
+  const authError = await authorizeStorageMutation(req);
+  if (authError) return authError;
 
   let buf: Buffer;
   let contentType: string;
@@ -126,6 +133,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
 }
 
 export async function DELETE(req: NextRequest, ctx: Ctx) {
+  const authError = await authorizeStorageMutation(req);
+  if (authError) return authError;
+
   const { bucket, path } = await ctx.params;
   const objectPath = (path || []).join("/");
   const storage = createStorageClient();

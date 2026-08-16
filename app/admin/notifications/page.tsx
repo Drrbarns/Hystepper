@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { adminAuthHeaders } from '@/lib/admin-auth-headers';
 
 export default function NotificationsPage() {
     const [loading, setLoading] = useState(false);
@@ -38,7 +39,7 @@ export default function NotificationsPage() {
             // 2. Call API
             const res = await fetch('/api/notifications', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: await adminAuthHeaders(),
                 body: JSON.stringify({
                     type: 'campaign',
                     payload: {

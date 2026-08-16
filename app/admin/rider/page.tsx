@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
+import { adminAuthHeaders } from '@/lib/admin-auth-headers';
 
 interface OrderItem {
   id: string;
@@ -161,7 +162,7 @@ export default function RiderPage() {
     try {
       const res = await fetch('/api/notifications', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await adminAuthHeaders(),
         body: JSON.stringify({
           type: 'order_status',
           payload: {

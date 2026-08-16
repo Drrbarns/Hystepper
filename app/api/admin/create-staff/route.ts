@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { requireStaff } from '@/lib/require-staff';
 import {
   createUser,
   findUserByEmail,
@@ -10,6 +11,9 @@ import { query } from '@/server/db/pool';
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireStaff(request, { superAdminOnly: true });
+    if (auth instanceof NextResponse) return auth;
+
     const { email, full_name, role, permissions, password } = await request.json();
 
     if (!email || !password || !full_name) {
@@ -18,6 +22,10 @@ export async function POST(request: Request) {
 
     if (password.length < 8) {
       return NextResponse.json({ error: 'Password must be at least 8 characters.' }, { status: 400 });
+    }
+
+    if (role === 'admin' && !auth.isSuperAdmin) {
+      return NextResponse.json({ error: 'Only super-admins may create admin staff.' }, { status: 403 });
     }
 
     const cleanEmail = email.trim().toLowerCase();

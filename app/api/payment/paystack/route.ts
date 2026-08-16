@@ -1,12 +1,23 @@
 import { NextResponse } from 'next/server';
+import { supabaseAdmin } from '@/lib/supabase-admin';
+import { checkRateLimit, getClientIdentifier, RATE_LIMITS } from '@/lib/rate-limit';
 
 export async function POST(req: Request) {
     try {
-        const body = await req.json();
-        const { orderId, amount, customerEmail, customerPhone } = body;
+        const clientId = getClientIdentifier(req);
+        const rl = checkRateLimit(`paystack-init:${clientId}`, RATE_LIMITS.payment);
+        if (!rl.success) {
+            return NextResponse.json(
+                { success: false, message: 'Too many payment attempts. Please wait a moment.' },
+                { status: 429 }
+            );
+        }
 
-        if (!orderId || !amount) {
-            return NextResponse.json({ success: false, message: 'Missing orderId or amount' }, { status: 400 });
+        const body = await req.json();
+        const { orderId, customerEmail, customerPhone } = body;
+
+        if (!orderId || typeof orderId !== 'string') {
+            return NextResponse.json({ success: false, message: 'Missing or invalid orderId' }, { status: 400 });
         }
 
         const secretKey = process.env.PAYSTACK_SECRET_KEY;
@@ -16,30 +27,55 @@ export async function POST(req: Request) {
             return NextResponse.json({ success: false, message: 'Payment gateway configuration error' }, { status: 500 });
         }
 
-        // Always derive the base URL from the actual incoming request so the
-        // callback works on every domain (local, staging, production) without
-        // needing to update NEXT_PUBLIC_APP_URL.
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderId);
+        const orderQuery = supabaseAdmin
+            .from('orders')
+            .select('id, order_number, total, email, payment_status, metadata');
+
+        const { data: order, error: orderError } = isUUID
+            ? await orderQuery.eq('id', orderId).single()
+            : await orderQuery.eq('order_number', orderId).single();
+
+        if (orderError || !order) {
+            console.error('[Paystack] Order not found:', orderId);
+            return NextResponse.json({ success: false, message: 'Order not found' }, { status: 404 });
+        }
+
+        if (order.payment_status === 'paid') {
+            return NextResponse.json({ success: false, message: 'Order is already paid' }, { status: 400 });
+        }
+
+        const payableNow = Number(order.metadata?.payable_now);
+        const amount =
+            Number.isFinite(payableNow) && payableNow > 0 ? payableNow : Number(order.total);
+        if (!amount || amount <= 0) {
+            return NextResponse.json({ success: false, message: 'Invalid order amount' }, { status: 400 });
+        }
+
+        const orderRef = order.order_number || orderId;
+
         const requestUrl = new URL(req.url);
         const baseUrl = requestUrl.origin;
 
-        // Paystack requires a valid email address
         const email = customerEmail && customerEmail.includes('@')
             ? customerEmail
-            : `guest-${customerPhone || 'unknown'}@hystepper.com`;
+            : order.email && order.email.includes('@')
+              ? order.email
+              : `guest-${customerPhone || 'unknown'}@hystepper.com`;
 
         const payload: any = {
             email,
-            amount: Math.round(amount * 100), // Paystack expects amount in pesewas (kobo)
+            amount: Math.round(amount * 100),
             currency: 'GHS',
-            reference: `PAY-${orderId}-${Date.now()}`,
-            callback_url: `${baseUrl}/api/payment/paystack/callback?order=${orderId}`,
+            reference: `PAY-${orderRef}-${Date.now()}`,
+            callback_url: `${baseUrl}/api/payment/paystack/callback?order=${orderRef}`,
             metadata: {
-                order_id: orderId,
+                order_id: orderRef,
                 customer_phone: customerPhone,
             }
         };
 
-        console.log('Initiating Paystack Payment:', payload);
+        console.log('[Paystack] Initiating payment for order:', orderRef, '| Amount:', amount);
 
         const response = await fetch('https://api.paystack.co/transaction/initialize', {
             method: 'POST',
@@ -51,7 +87,6 @@ export async function POST(req: Request) {
         });
 
         const result = await response.json();
-        console.log('Paystack Response:', result);
 
         if (result.status && result.data?.authorization_url) {
             return NextResponse.json({
@@ -60,12 +95,12 @@ export async function POST(req: Request) {
                 reference: result.data.reference,
                 access_code: result.data.access_code
             });
-        } else {
-            return NextResponse.json({
-                success: false,
-                message: result.message || 'Failed to initialize payment'
-            }, { status: 400 });
         }
+
+        return NextResponse.json({
+            success: false,
+            message: result.message || 'Failed to initialize payment'
+        }, { status: 400 });
 
     } catch (error: any) {
         console.error('Paystack Payment API Error:', error);

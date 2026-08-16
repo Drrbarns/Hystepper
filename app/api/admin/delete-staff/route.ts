@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { requireStaff } from '@/lib/require-staff';
 import { query } from '@/server/db/pool';
 
 /**
@@ -7,6 +8,9 @@ import { query } from '@/server/db/pool';
  */
 export async function POST(request: Request) {
   try {
+    const auth = await requireStaff(request, { superAdminOnly: true });
+    if (auth instanceof NextResponse) return auth;
+
     const { id } = await request.json();
 
     if (!id) {

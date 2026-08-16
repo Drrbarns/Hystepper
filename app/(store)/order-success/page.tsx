@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
 import { trackPurchase } from '@/components/TrackingScripts';
 
 function OrderSuccessContent() {
@@ -16,13 +15,15 @@ function OrderSuccessContent() {
 
   const fetchOrder = async () => {
     if (!orderNumber) return null;
-    const { data: orderData, error } = await supabase
-      .from('orders')
-      .select(`*, order_items (*)`)
-      .eq('order_number', orderNumber)
-      .single();
-    if (error) throw error;
-    return orderData;
+    const res = await fetch(`/api/orders/lookup?order=${encodeURIComponent(orderNumber)}`, {
+      cache: 'no-store',
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || 'Failed to load order');
+    }
+    const body = await res.json();
+    return body.order || null;
   };
 
   useEffect(() => {
@@ -127,14 +128,10 @@ function OrderSuccessContent() {
     let cancelled = false;
     const interval = setInterval(async () => {
       try {
-        const { data } = await supabase
-          .from('orders')
-          .select('*, order_items(*)')
-          .eq('order_number', orderNumber)
-          .single();
-        if (cancelled || !data) return;
-        if ((data.payment_status || '').toLowerCase() !== 'pending') {
-          setOrder(data);
+        const refreshed = await fetchOrder();
+        if (cancelled || !refreshed) return;
+        if ((refreshed.payment_status || '').toLowerCase() !== 'pending') {
+          setOrder(refreshed);
         }
       } catch {
         // ignore — try again next tick

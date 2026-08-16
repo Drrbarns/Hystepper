@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { adminAuthHeaders } from '@/lib/admin-auth-headers';
 import AdminTableScroll from '@/components/admin/AdminTableScroll';
 
 // NOTE: 'dashboard' is intentionally NOT a togglable permission. The dashboard
@@ -95,6 +96,10 @@ export default function StaffPage() {
     setTimeout(() => setToast(null), 3500);
   }
 
+  async function getAuthHeaders() {
+    return adminAuthHeaders();
+  }
+
   async function handleInvite() {
     if (!inviteForm.email.trim() || !inviteForm.full_name.trim()) {
       showToast('error', 'Name and email are required.');
@@ -108,7 +113,7 @@ export default function StaffPage() {
     try {
       const res = await fetch('/api/admin/create-staff', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthHeaders(),
         body: JSON.stringify({
           email: inviteForm.email.trim().toLowerCase(),
           full_name: inviteForm.full_name.trim(),
@@ -183,7 +188,7 @@ export default function StaffPage() {
       // login that then blocked re-adding the same email.
       const res = await fetch('/api/admin/delete-staff', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthHeaders(),
         body: JSON.stringify({ id }),
       });
       const result = await res.json().catch(() => ({}));

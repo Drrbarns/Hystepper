@@ -202,7 +202,9 @@ export default function Footer() {
               href="https://doctorbarns.com"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs text-gray-600 hover:text-gold-400 transition-colors"
+              className="sr-only"
+              tabIndex={-1}
+              aria-hidden="true"
             >
               Powered by Doctor Barns Tech
             </a>

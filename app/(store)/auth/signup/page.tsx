@@ -112,7 +112,12 @@ export default function SignupPage() {
 
         fetch('/api/notifications', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(data.session?.access_token
+              ? { Authorization: `Bearer ${data.session.access_token}` }
+              : {}),
+          },
           body: JSON.stringify({
             type: 'welcome',
             payload: { email: formData.email, firstName: formData.firstName },
@@ -149,7 +154,10 @@ export default function SignupPage() {
       if (data.session) {
         fetch('/api/notifications', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${data.session.access_token}`,
+          },
           body: JSON.stringify({
             type: 'welcome',
             payload: { email: formData.email, firstName: formData.firstName, phone: formData.phone },

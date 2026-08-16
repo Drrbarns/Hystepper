@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { adminAuthHeaders } from '@/lib/admin-auth-headers';
 import FraudDetectionAlert from '@/components/FraudDetectionAlert';
 import {
   ORDER_STATUS_COLORS,
@@ -312,7 +313,7 @@ export default function OrderDetailClient({ orderId }: OrderDetailClientProps) {
         try {
           const res = await fetch('/api/notifications', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: await adminAuthHeaders(),
             body: JSON.stringify({
               type: 'order_status',
               payload: {

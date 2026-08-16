@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
+import { adminAuthHeaders } from '@/lib/admin-auth-headers';
 import { compareSizes } from '@/lib/sort-sizes';
 import LazyImage from '@/components/LazyImage';
 
@@ -567,10 +568,11 @@ export default function POSPage() {
             // details. We override the saved `pos@store.local` placeholder so
             // sendOrderConfirmation never emails that fake address.
             const customerHasContact = Boolean(resolvedEmail || resolvedPhone);
+            const notifyHeaders = await adminAuthHeaders();
             if (customerHasContact) {
                 fetch('/api/notifications', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: notifyHeaders,
                     body: JSON.stringify({
                         type: 'order_created',
                         payload: {
@@ -584,7 +586,7 @@ export default function POSPage() {
 
             fetch('/api/notifications', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: notifyHeaders,
                 body: JSON.stringify({
                     type: 'pos_admin_alert',
                     payload: {
