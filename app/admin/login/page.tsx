@@ -4,6 +4,10 @@ import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import {
+  setAdminSessionCookie,
+  syncAdminPreviewCookie,
+} from '@/lib/admin-session-cookie';
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -37,6 +41,9 @@ export default function AdminLoginPage() {
       if (error) throw error;
 
       if (data.session) {
+        // Mint preview cookies immediately so storefront works under maintenance.
+        setAdminSessionCookie();
+        await syncAdminPreviewCookie(data.session.access_token);
         router.push('/admin');
         router.refresh();
       }

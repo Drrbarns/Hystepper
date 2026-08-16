@@ -6,6 +6,11 @@ import { usePathname, useRouter } from 'next/navigation';
 import { supabase, signOutFully } from '@/lib/supabase';
 import { useBodyScrollLock } from '@/lib/use-body-scroll-lock';
 import NotificationsBell from '@/components/admin/NotificationsBell';
+import {
+  clearAdminPreviewCookie,
+  setAdminSessionCookie,
+  syncAdminPreviewCookie,
+} from '@/lib/admin-session-cookie';
 
 // Maps each admin URL prefix to the permission key that grants access.
 // Keys are matched longest-prefix-first; a value of null means "no permission
@@ -96,6 +101,11 @@ export default function AdminLayout({
       const { data: { session } } = await supabase.auth.getSession();
 
       if (pathname === '/admin/login') {
+        // Still mint preview cookies if already signed in (e.g. refresh on login).
+        if (session) {
+          setAdminSessionCookie();
+          await syncAdminPreviewCookie(session.access_token);
+        }
         setIsLoading(false);
         return;
       }
@@ -108,9 +118,8 @@ export default function AdminLayout({
       setUser(session.user);
       setIsAuthenticated(true);
       // Lets middleware allow storefront preview while maintenance_mode is on.
-      document.cookie =
-        'admin_session=1; path=/; max-age=86400; SameSite=Lax' +
-        (window.location.protocol === 'https:' ? '; Secure' : '');
+      setAdminSessionCookie();
+      await syncAdminPreviewCookie(session.access_token);
 
       // Check profile role — 'admin' = super admin with full access
       const { data: profileRow } = await supabase
@@ -139,13 +148,13 @@ export default function AdminLayout({
       // full access via the earlier "fallback to full dashboard" behaviour.
       if (!staffRow) {
         console.warn('[Admin] User has no staff record, signing out:', session.user.email);
-        document.cookie = 'admin_session=; path=/; max-age=0';
+        await clearAdminPreviewCookie();
         await signOutFully('/admin/login?error=no_access');
         return;
       }
 
       if (!staffRow.is_active) {
-        document.cookie = 'admin_session=; path=/; max-age=0';
+        await clearAdminPreviewCookie();
         await signOutFully('/admin/login?error=inactive');
         return;
       }
@@ -194,7 +203,7 @@ export default function AdminLayout({
         const next = firstAllowedPath(perms, staffRow.role);
         if (next === '/admin/login') {
           // Staff with zero allowed pages — sign them out cleanly.
-          document.cookie = 'admin_session=; path=/; max-age=0';
+          await clearAdminPreviewCookie();
           await signOutFully('/admin/login?error=no_access');
           return;
         }
@@ -271,7 +280,7 @@ export default function AdminLayout({
   useBodyScrollLock(isSidebarOpen && isMobile);
 
   const handleLogout = async () => {
-    document.cookie = 'admin_session=; path=/; max-age=0';
+    await clearAdminPreviewCookie();
     await signOutFully('/admin/login');
   };
 
@@ -284,6 +293,11 @@ export default function AdminLayout({
     const next = !maintenanceEnabled;
     setMaintenanceToggling(true);
     try {
+      // Keep preview cookies fresh so the admin can still open the storefront.
+      setAdminSessionCookie();
+      const { data: { session } } = await supabase.auth.getSession();
+      await syncAdminPreviewCookie(session?.access_token);
+
       const { error } = await supabase.from('store_settings').upsert(
         // Store as real JSON boolean so middleware + UI parse consistently
         { key: 'maintenance_mode', value: next, updated_at: new Date().toISOString() },

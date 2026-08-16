@@ -2,20 +2,27 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 /**
- * Original maintenance behaviour (restored):
- * - When maintenance_mode is on, storefront redirects to /maintenance
- * - Logged-in admins (admin_session cookie set by /admin) can still preview the site
- * - Admin panel itself is never blocked
- * - On settings-read failure, fail open so a DB blip does not lock the store
+ * Maintenance mode (original behaviour):
+ * - When ON → public visitors are redirected to /maintenance
+ * - When ON → logged-in admins/staff can still browse the full storefront
+ *   (via admin_session cookie and/or HttpOnly hy_admin_preview cookie)
+ * - /admin is never blocked
+ * - On settings-read failure, fail open
  */
 let cachedMaintenance: { value: boolean; at: number } | null = null;
-const CACHE_TTL_MS = 15_000;
+const CACHE_TTL_MS = 10_000;
 
 function parseMaintenanceFlag(raw: unknown): boolean {
   if (raw === true || raw === 1) return true;
   if (raw === false || raw === 0 || raw == null) return false;
   const s = String(raw).trim().replace(/^"+|"+$/g, '').toLowerCase();
   return s === 'true' || s === '1' || s === 'yes' || s === 'on';
+}
+
+function isAdminPreview(request: NextRequest): boolean {
+  if (request.cookies.get('admin_session')?.value === '1') return true;
+  if (request.cookies.get('hy_admin_preview')?.value === '1') return true;
+  return false;
 }
 
 async function isMaintenanceModeEnabled(): Promise<boolean> {
@@ -49,7 +56,6 @@ async function isMaintenanceModeEnabled(): Promise<boolean> {
     cachedMaintenance = { value: enabled, at: now };
     return enabled;
   } catch {
-    // Fail open — never lock the whole storefront because PostgREST blipped.
     return false;
   }
 }
@@ -57,7 +63,6 @@ async function isMaintenanceModeEnabled(): Promise<boolean> {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Never gate backend gateway paths or static assets.
   if (
     pathname.startsWith('/rest/') ||
     pathname.startsWith('/auth/') ||
@@ -79,11 +84,8 @@ export async function middleware(request: NextRequest) {
   }
 
   const inMaintenance = await isMaintenanceModeEnabled();
-  if (inMaintenance) {
-    const isAdmin = request.cookies.get('admin_session')?.value === '1';
-    if (!isAdmin) {
-      return NextResponse.redirect(new URL('/maintenance', request.url));
-    }
+  if (inMaintenance && !isAdminPreview(request)) {
+    return NextResponse.redirect(new URL('/maintenance', request.url));
   }
 
   const response = NextResponse.next();

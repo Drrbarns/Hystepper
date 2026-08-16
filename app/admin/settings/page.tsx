@@ -555,7 +555,7 @@ export default function SettingsPage() {
                                         <i className="ri-tools-line text-lg text-gray-600"></i>
                                         Maintenance Mode
                                     </h3>
-                                    <p className="text-sm text-gray-500 mb-4">When enabled, the storefront shows a maintenance page. Use the sidebar toggle to enable/disable. Admin always remains accessible.</p>
+                                    <p className="text-sm text-gray-500 mb-4">When enabled, visitors see the maintenance page. Logged-in admins can still browse the full storefront in the same browser. Use the sidebar toggle to enable/disable. The admin panel always remains accessible.</p>
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-2">Countdown Duration (minutes)</label>
                                         <input
