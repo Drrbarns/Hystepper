@@ -1,6 +1,64 @@
+'use client';
+
 import Link from 'next/link';
+import { useCMS } from '@/context/CMSContext';
+import {
+  DEFAULT_POLICY_EXCHANGE,
+  DEFAULT_POLICY_REFUND,
+  DEFAULT_POLICY_NOTICE,
+  DEFAULT_POLICY_FOOTNOTE,
+} from '@/lib/policy-defaults';
+
+/**
+ * Renders admin-editable policy text: plain lines become paragraphs,
+ * lines starting with "- " become gold-bulleted list items.
+ */
+function PolicyBody({ text }: { text: string }) {
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  const blocks: Array<{ type: 'p'; text: string } | { type: 'ul'; items: string[] }> = [];
+
+  lines.forEach((line) => {
+    if (line.startsWith('- ')) {
+      const item = line.slice(2).trim();
+      const last = blocks[blocks.length - 1];
+      if (last && last.type === 'ul') {
+        blocks[blocks.length - 1] = { type: 'ul', items: [...last.items, item] };
+      } else {
+        blocks.push({ type: 'ul', items: [item] });
+      }
+    } else {
+      blocks.push({ type: 'p', text: line });
+    }
+  });
+
+  return (
+    <div className="space-y-4 text-gray-300 text-sm md:text-base leading-relaxed">
+      {blocks.map((block, i) =>
+        block.type === 'p' ? (
+          <p key={i} className="text-center">{block.text}</p>
+        ) : (
+          <ul key={i} className="space-y-2 text-left max-w-xl mx-auto">
+            {block.items.map((item, j) => (
+              <li key={j} className="flex items-start gap-2">
+                <span className="text-gold-400 mt-0.5">&bull;</span>
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        )
+      )}
+    </div>
+  );
+}
 
 export default function PolicyPage() {
+  const { getSetting } = useCMS();
+
+  const exchangeText = getSetting('policy_exchange') || DEFAULT_POLICY_EXCHANGE;
+  const refundText = getSetting('policy_refund') || DEFAULT_POLICY_REFUND;
+  const noticeText = getSetting('policy_notice') || DEFAULT_POLICY_NOTICE;
+  const footnote = getSetting('policy_footnote') || DEFAULT_POLICY_FOOTNOTE;
+
   return (
     <div className="min-h-screen bg-white">
       {/* Header */}
@@ -20,66 +78,25 @@ export default function PolicyPage() {
         {/* Exchange Policy */}
         <section className="bg-gray-900 text-white rounded-2xl p-8 md:p-10 animate-fade-in-up shadow-xl hover:shadow-2xl transition-shadow duration-300 border border-transparent hover:border-gold-500/20">
           <h2 className="text-xl md:text-2xl font-bold text-center tracking-wide uppercase mb-6">Exchange Policy</h2>
-          <div className="space-y-4 text-gray-300 text-sm md:text-base leading-relaxed text-center">
-            <p>
-              We accept exchanges for faulty items. Requests for exchanges of faulty items must be reported within <strong className="text-white">48 hours</strong> after delivery. Exchanges for other issues are reviewed on a case-by-case basis and must be reported within <strong className="text-white">24 hours</strong> after delivery.
-            </p>
-            <ul className="space-y-2 text-left max-w-xl mx-auto">
-              <li className="flex items-start gap-2">
-                <span className="text-gold-400 mt-0.5">&bull;</span>
-                <span>If the fault is on our side, we will cover the delivery fee for exchanges.</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-gold-400 mt-0.5">&bull;</span>
-                <span>For size issues or concerns not related to faults, the customer is responsible for the delivery fee.</span>
-              </li>
-            </ul>
-          </div>
+          <PolicyBody text={exchangeText} />
         </section>
 
         {/* Refund Policy */}
         <section className="bg-gray-900 text-white rounded-2xl p-8 md:p-10 animate-fade-in-up delay-100 shadow-xl hover:shadow-2xl transition-shadow duration-300 border border-transparent hover:border-gold-500/20">
           <h2 className="text-xl md:text-2xl font-bold text-center tracking-wide uppercase mb-6">Refund Policy</h2>
-          <div className="space-y-4 text-gray-300 text-sm md:text-base leading-relaxed text-center">
-            <p>
-              Refunds are only available for faulty or wrong items delivered only if an exchange is not possible. We do not offer refunds for any other reasons.
-            </p>
-            <ul className="space-y-2 text-left max-w-xl mx-auto">
-              <li className="flex items-start gap-2">
-                <span className="text-gold-400 mt-0.5">&bull;</span>
-                <span>Delivery fees are non-refundable once delivery is completed or once the rider has been directed to the customer&apos;s location.</span>
-              </li>
-            </ul>
-          </div>
+          <PolicyBody text={refundText} />
         </section>
 
         {/* Important Notice */}
         <section className="bg-gray-900 text-white rounded-2xl p-8 md:p-10 animate-fade-in-up delay-200 shadow-xl hover:shadow-2xl transition-shadow duration-300 border border-transparent hover:border-gold-500/20">
           <h2 className="text-xl md:text-2xl font-bold text-center tracking-wide uppercase mb-6">Important Notice</h2>
-          <div className="space-y-3 text-gray-300 text-sm md:text-base leading-relaxed">
-            <ul className="space-y-3 max-w-xl mx-auto">
-              <li className="flex items-start gap-2">
-                <span className="text-gold-400 mt-0.5">&bull;</span>
-                <span>Exchanges or refunds are not possible if the item has been used, worn, or appears visibly worn, even if it&apos;s faulty.</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-gold-400 mt-0.5">&bull;</span>
-                <span>If a faulty item has been used, the case will be reviewed on an individual basis, and other solutions may be offered. However, an exchange or refund is not guaranteed.</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-gold-400 mt-0.5">&bull;</span>
-                <span>All original packaging, including tags, wraps, and any included items, must be intact for an exchange to be processed.</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-gold-400 mt-0.5">&bull;</span>
-                <span>If any part of the packaging is missing, or if the item has been worn, exchanges will not be accepted.</span>
-              </li>
-            </ul>
-          </div>
+          <PolicyBody text={noticeText} />
 
-          <p className="mt-8 text-center text-white font-bold text-sm md:text-base">
-            This policy is subject to review and amendment from time to time. Please check back periodically for any updates.
-          </p>
+          {footnote && (
+            <p className="mt-8 text-center text-white font-bold text-sm md:text-base">
+              {footnote}
+            </p>
+          )}
         </section>
 
         {/* Contact */}

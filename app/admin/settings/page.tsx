@@ -3,6 +3,12 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
+import {
+    DEFAULT_POLICY_EXCHANGE,
+    DEFAULT_POLICY_REFUND,
+    DEFAULT_POLICY_NOTICE,
+    DEFAULT_POLICY_FOOTNOTE,
+} from '@/lib/policy-defaults';
 
 interface StoreSetting {
     key: string;
@@ -447,6 +453,7 @@ export default function SettingsPage() {
                             { id: 'popup', label: 'Welcome Popup', icon: 'ri-window-line' },
                             { id: 'contact', label: 'Contact & Social', icon: 'ri-contacts-line' },
                             { id: 'store', label: 'Store Config', icon: 'ri-settings-4-line' },
+                            { id: 'policies', label: 'Store Policies', icon: 'ri-file-text-line' },
                             { id: 'tracking', label: 'Tracking & Pixels', icon: 'ri-line-chart-line' },
                             { id: 'delivery', label: 'Delivery Zones', icon: 'ri-truck-line' },
                         ].map((tab) => (
@@ -1343,6 +1350,77 @@ export default function SettingsPage() {
                         )}
 
                         {/* Tracking & Pixels Tab */}
+                        {activeTab === 'policies' && (
+                            <form onSubmit={handleSaveSettings} className="space-y-6">
+                                <div className="border-b border-gray-100 pb-4 mb-6">
+                                    <h2 className="text-lg font-semibold text-gray-900">Store Policies</h2>
+                                    <p className="text-sm text-gray-500 mt-1">
+                                        Edit the Exchange &amp; Refund Policy shown on the <span className="font-mono">/policy</span> page.
+                                        Plain lines appear as paragraphs; start a line with <span className="font-mono">- </span> to make it a bullet point.
+                                        Leave a field empty to use the built-in default text.
+                                    </p>
+                                </div>
+
+                                <div className="grid grid-cols-1 gap-6">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">Exchange Policy</label>
+                                        <textarea
+                                            value={settings.policy_exchange || ''}
+                                            onChange={(e) => updateSetting('policy_exchange', e.target.value)}
+                                            rows={6}
+                                            placeholder={DEFAULT_POLICY_EXCHANGE}
+                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all text-sm"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">Refund Policy</label>
+                                        <textarea
+                                            value={settings.policy_refund || ''}
+                                            onChange={(e) => updateSetting('policy_refund', e.target.value)}
+                                            rows={5}
+                                            placeholder={DEFAULT_POLICY_REFUND}
+                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all text-sm"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">Important Notice</label>
+                                        <textarea
+                                            value={settings.policy_notice || ''}
+                                            onChange={(e) => updateSetting('policy_notice', e.target.value)}
+                                            rows={7}
+                                            placeholder={DEFAULT_POLICY_NOTICE}
+                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all text-sm"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">Closing Note</label>
+                                        <textarea
+                                            value={settings.policy_footnote || ''}
+                                            onChange={(e) => updateSetting('policy_footnote', e.target.value)}
+                                            rows={2}
+                                            placeholder={DEFAULT_POLICY_FOOTNOTE}
+                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all text-sm"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="bg-blue-50 rounded-lg border border-blue-100 p-4 text-sm text-blue-800">
+                                    <p><i className="ri-information-line mr-1"></i>Changes appear on the storefront policy page as soon as you save (visitors may need to refresh).</p>
+                                </div>
+
+                                <div className="pt-6 border-t border-gray-100 flex justify-end">
+                                    <button
+                                        type="submit"
+                                        disabled={saving}
+                                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 flex items-center gap-2"
+                                    >
+                                        {saving && <i className="ri-loader-4-line animate-spin"></i>}
+                                        Save Changes
+                                    </button>
+                                </div>
+                            </form>
+                        )}
+
                         {activeTab === 'tracking' && (
                             <form onSubmit={handleSaveSettings} className="space-y-6">
                                 <div className="border-b border-gray-100 pb-4 mb-6">
