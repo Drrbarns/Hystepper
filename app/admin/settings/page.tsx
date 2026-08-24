@@ -9,6 +9,9 @@ import {
     DEFAULT_POLICY_NOTICE,
     DEFAULT_POLICY_FOOTNOTE,
 } from '@/lib/policy-defaults';
+import { policyToEditorHtml } from '@/lib/policy-html';
+import BlogRichEditor from '@/components/admin/BlogRichEditor';
+import PolicyContent from '@/components/policy/PolicyContent';
 
 interface StoreSetting {
     key: string;
@@ -96,6 +99,10 @@ export default function SettingsPage() {
             settingsData?.forEach((s: StoreSetting) => {
                 settingsMap[s.key] = s.value;
             });
+            settingsMap.policy_exchange = policyToEditorHtml(settingsMap.policy_exchange, DEFAULT_POLICY_EXCHANGE);
+            settingsMap.policy_refund = policyToEditorHtml(settingsMap.policy_refund, DEFAULT_POLICY_REFUND);
+            settingsMap.policy_notice = policyToEditorHtml(settingsMap.policy_notice, DEFAULT_POLICY_NOTICE);
+            settingsMap.policy_footnote = policyToEditorHtml(settingsMap.policy_footnote, DEFAULT_POLICY_FOOTNOTE);
             setSettings(settingsMap);
 
             // Hydrate hero slides (stored as JSON array under hero_slides).
@@ -1355,53 +1362,45 @@ export default function SettingsPage() {
                                 <div className="border-b border-gray-100 pb-4 mb-6">
                                     <h2 className="text-lg font-semibold text-gray-900">Store Policies</h2>
                                     <p className="text-sm text-gray-500 mt-1">
-                                        Edit the Exchange &amp; Refund Policy shown on the <span className="font-mono">/policy</span> page.
-                                        Plain lines appear as paragraphs; start a line with <span className="font-mono">- </span> to make it a bullet point.
-                                        Leave a field empty to use the built-in default text.
+                                        Edit the copy on the public{' '}
+                                        <a href="/policy" target="_blank" rel="noreferrer" className="text-emerald-700 underline">
+                                            Exchange &amp; Refund
+                                        </a>{' '}
+                                        page. Select text and use the toolbar to bold or add lists. The panel on the right is the customer preview.
                                     </p>
                                 </div>
 
-                                <div className="grid grid-cols-1 gap-6">
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">Exchange Policy</label>
-                                        <textarea
-                                            value={settings.policy_exchange || ''}
-                                            onChange={(e) => updateSetting('policy_exchange', e.target.value)}
-                                            rows={6}
-                                            placeholder={DEFAULT_POLICY_EXCHANGE}
-                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all text-sm"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">Refund Policy</label>
-                                        <textarea
-                                            value={settings.policy_refund || ''}
-                                            onChange={(e) => updateSetting('policy_refund', e.target.value)}
-                                            rows={5}
-                                            placeholder={DEFAULT_POLICY_REFUND}
-                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all text-sm"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">Important Notice</label>
-                                        <textarea
-                                            value={settings.policy_notice || ''}
-                                            onChange={(e) => updateSetting('policy_notice', e.target.value)}
-                                            rows={7}
-                                            placeholder={DEFAULT_POLICY_NOTICE}
-                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all text-sm"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">Closing Note</label>
-                                        <textarea
-                                            value={settings.policy_footnote || ''}
-                                            onChange={(e) => updateSetting('policy_footnote', e.target.value)}
-                                            rows={2}
-                                            placeholder={DEFAULT_POLICY_FOOTNOTE}
-                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all text-sm"
-                                        />
-                                    </div>
+                                <div className="grid grid-cols-1 gap-8">
+                                    {([
+                                        ['policy_exchange', 'Exchange Policy', DEFAULT_POLICY_EXCHANGE],
+                                        ['policy_refund', 'Refund Policy', DEFAULT_POLICY_REFUND],
+                                        ['policy_notice', 'Important Notice', DEFAULT_POLICY_NOTICE],
+                                        ['policy_footnote', 'Closing Note', DEFAULT_POLICY_FOOTNOTE],
+                                    ] as const).map(([key, label, fallback]) => (
+                                        <div key={key}>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
+                                            <div className="grid lg:grid-cols-2 gap-4 items-start">
+                                                <BlogRichEditor
+                                                    compact
+                                                    ariaLabel={label}
+                                                    value={settings[key] || policyToEditorHtml('', fallback)}
+                                                    onChange={(html) => updateSetting(key, html)}
+                                                />
+                                                <div className="rounded-2xl bg-gray-900 text-white p-6 min-h-[140px]">
+                                                    <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-gray-400 mb-4">
+                                                        Customer preview
+                                                    </p>
+                                                    {key === 'policy_footnote' ? (
+                                                        <p className="text-center text-white font-bold text-sm">
+                                                            {String(settings[key] || fallback).replace(/<[^>]+>/g, '')}
+                                                        </p>
+                                                    ) : (
+                                                        <PolicyContent text={settings[key] || fallback} variant="storefront" />
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
                                 </div>
 
                                 <div className="bg-blue-50 rounded-lg border border-blue-100 p-4 text-sm text-blue-800">

@@ -6,6 +6,8 @@ type BlogRichEditorProps = {
   value: string;
   onChange: (html: string) => void;
   placeholder?: string;
+  compact?: boolean;
+  ariaLabel?: string;
 };
 
 type Tool = {
@@ -36,11 +38,18 @@ const TOOLS: Tool[] = [
  * Lightweight WYSIWYG for blog posts — no extra npm deps.
  * Saves HTML that the storefront renders safely as admin-authored content.
  */
+const COMPACT_TOOLS: Tool[] = TOOLS.filter((t) =>
+  ['Bold', 'Italic', 'Underline', 'Bullet list', 'Numbered list', 'Clear formatting'].includes(t.title)
+);
+
 export default function BlogRichEditor({
   value,
   onChange,
   placeholder = 'Write your article…',
+  compact = false,
+  ariaLabel = 'Blog content editor',
 }: BlogRichEditorProps) {
+  const tools = compact ? COMPACT_TOOLS : TOOLS;
   const editorRef = useRef<HTMLDivElement>(null);
   const lastExternal = useRef<string>('');
 
@@ -100,7 +109,7 @@ export default function BlogRichEditor({
   return (
     <div className="border border-gray-300 rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-emerald-500">
       <div className="flex flex-wrap gap-1 p-2 bg-gray-50 border-b border-gray-200">
-        {TOOLS.map((tool) => (
+        {tools.map((tool) => (
           <button
             key={tool.title}
             type="button"
@@ -120,23 +129,25 @@ export default function BlogRichEditor({
         contentEditable
         role="textbox"
         aria-multiline="true"
-        aria-label="Blog content editor"
+        aria-label={ariaLabel}
         data-placeholder={placeholder}
-        className="min-h-[280px] max-h-[480px] overflow-y-auto px-4 py-3 text-gray-900 leading-relaxed outline-none prose prose-sm max-w-none
+        className={`${compact ? 'min-h-[140px] max-h-[280px]' : 'min-h-[280px] max-h-[480px]'} overflow-y-auto px-4 py-3 text-gray-900 leading-relaxed outline-none prose prose-sm max-w-none
           empty:before:content-[attr(data-placeholder)] empty:before:text-gray-400 empty:before:pointer-events-none
           [&_h2]:text-2xl [&_h2]:font-bold [&_h2]:mt-4 [&_h2]:mb-2
           [&_h3]:text-xl [&_h3]:font-semibold [&_h3]:mt-3 [&_h3]:mb-2
           [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6
           [&_blockquote]:border-l-4 [&_blockquote]:border-emerald-400 [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:text-gray-600
           [&_a]:text-emerald-700 [&_a]:underline
-          [&_img]:max-w-full [&_img]:rounded-lg [&_img]:my-3"
+          [&_img]:max-w-full [&_img]:rounded-lg [&_img]:my-3`}
         onInput={emitChange}
         onBlur={emitChange}
         suppressContentEditableWarning
       />
       <div className="px-3 py-2 bg-gray-50 border-t border-gray-200 text-xs text-gray-500 flex items-center gap-2">
         <i className="ri-information-line"></i>
-        Use the toolbar for headings, bold, lists, links, and images. Content is saved as formatted HTML.
+        {compact
+          ? 'Select text, then use the toolbar to bold, italicise, or turn lines into a list.'
+          : 'Use the toolbar for headings, bold, lists, links, and images. Content is saved as formatted HTML.'}
       </div>
     </div>
   );

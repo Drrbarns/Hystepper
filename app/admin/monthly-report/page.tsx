@@ -15,9 +15,11 @@ type MonthStats = {
   products: Map<string, TopProduct>;
 };
 
-type Insight = {
-  tone: 'up' | 'down' | 'info' | 'action';
-  text: string;
+type BriefItem = {
+  kind: 'finding' | 'action';
+  title: string;
+  detail: string;
+  direction?: 'up' | 'down';
 };
 
 function getMonthRange(monthsAgo: number) {
@@ -25,7 +27,8 @@ function getMonthRange(monthsAgo: number) {
   const start = new Date(now.getFullYear(), now.getMonth() - monthsAgo, 1, 0, 0, 0, 0);
   const end = new Date(now.getFullYear(), now.getMonth() - monthsAgo + 1, 0, 23, 59, 59, 999);
   const label = start.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
-  return { start, end, label };
+  const short = start.toLocaleDateString('en-GB', { month: 'short' });
+  return { start, end, label, short };
 }
 
 function pctChange(current: number, previous: number): number | null {
@@ -34,9 +37,21 @@ function pctChange(current: number, previous: number): number | null {
 }
 
 function formatPct(value: number | null): string {
-  if (value === null) return 'new';
+  if (value === null) return 'New';
   const sign = value > 0 ? '+' : '';
-  return `${sign}${value.toFixed(1)}%`;
+  return `${sign}${Math.abs(value) >= 10 ? value.toFixed(0) : value.toFixed(1)}%`;
+}
+
+function formatMoney(n: number): string {
+  const rounded = Math.round(n);
+  if (Math.abs(n - rounded) < 0.005) {
+    return `GH₵${rounded.toLocaleString('en-US')}`;
+  }
+  return `GH₵${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function formatInt(n: number): string {
+  return n.toLocaleString('en-US');
 }
 
 const EMPTY_STATS: MonthStats = {
@@ -164,122 +179,174 @@ export default function MonthlyReportPage() {
     aov: pctChange(aov, prevAov),
   }), [current, previous, aov, prevAov]);
 
-  const insights = useMemo<Insight[]>(() => {
-    const list: Insight[] = [];
+  const headline = useMemo(() => {
+    const hasPrev = previous.orderCount > 0 || previous.revenue > 0;
+    if (!hasPrev) {
+      return `${range.label} is the first month with a full comparison window.`;
+    }
+    const rev = deltas.revenue ?? 0;
+    const ord = deltas.orders ?? 0;
+    if (rev > 15 && ord < 0) {
+      return 'Revenue rose on fewer orders — average basket size did the work.';
+    }
+    if (rev > 15 && ord > 0) {
+      return 'Both revenue and order volume were ahead of the previous month.';
+    }
+    if (rev < -10 && ord < 0) {
+      return 'Sales and volume both eased versus the previous month.';
+    }
+    if (Math.abs(rev) < 8 && Math.abs(ord) < 8) {
+      return 'Trading was broadly in line with the previous month.';
+    }
+    if (rev > 0) return 'Revenue finished ahead of the previous month.';
+    return 'Revenue finished behind the previous month.';
+  }, [previous, deltas, range.label]);
+
+  const brief = useMemo(() => {
+    const findings: BriefItem[] = [];
+    const actions: BriefItem[] = [];
     const hasPrevData = previous.orderCount > 0 || previous.revenue > 0;
 
-    // --- Sales trend ---
     if (hasPrevData) {
       if (deltas.revenue !== null && deltas.revenue !== 0) {
-        list.push({
-          tone: deltas.revenue > 0 ? 'up' : 'down',
-          text: `Revenue ${deltas.revenue > 0 ? 'increased' : 'decreased'} by ${Math.abs(deltas.revenue).toFixed(1)}% vs ${prevRange.label} (GH₵${previous.revenue.toFixed(2)} → GH₵${current.revenue.toFixed(2)}).`,
+        findings.push({
+          kind: 'finding',
+          direction: deltas.revenue > 0 ? 'up' : 'down',
+          title: `Revenue ${formatPct(deltas.revenue)}`,
+          detail: `${formatMoney(previous.revenue)} in ${prevRange.short} to ${formatMoney(current.revenue)} in ${range.short}.`,
         });
       }
       if (deltas.orders !== null && deltas.orders !== 0) {
-        list.push({
-          tone: deltas.orders > 0 ? 'up' : 'down',
-          text: `Orders ${deltas.orders > 0 ? 'increased' : 'decreased'} by ${Math.abs(deltas.orders).toFixed(1)}% (${previous.orderCount} → ${current.orderCount}).`,
-        });
-      }
-      if (deltas.customers !== null && deltas.customers !== 0) {
-        list.push({
-          tone: deltas.customers > 0 ? 'up' : 'down',
-          text: `Customer acquisition ${deltas.customers > 0 ? 'increased' : 'decreased'} by ${Math.abs(deltas.customers).toFixed(1)}% (${previous.newCustomers} → ${current.newCustomers} new customers).`,
+        findings.push({
+          kind: 'finding',
+          direction: deltas.orders > 0 ? 'up' : 'down',
+          title: `Orders ${formatPct(deltas.orders)}`,
+          detail: `${formatInt(current.orderCount)} paid orders, versus ${formatInt(previous.orderCount)} in ${prevRange.short}.`,
         });
       }
       if (deltas.aov !== null && Math.abs(deltas.aov) >= 5) {
-        list.push({
-          tone: deltas.aov > 0 ? 'up' : 'down',
-          text: `Average order value ${deltas.aov > 0 ? 'rose' : 'fell'} ${Math.abs(deltas.aov).toFixed(1)}% to GH₵${aov.toFixed(2)}.${deltas.aov < 0 ? ' Consider bundles or free-delivery thresholds to lift basket size.' : ''}`,
+        findings.push({
+          kind: 'finding',
+          direction: deltas.aov > 0 ? 'up' : 'down',
+          title: `Average order ${formatPct(deltas.aov)}`,
+          detail: `${formatMoney(aov)} this month${prevAov > 0 ? `, from ${formatMoney(prevAov)}` : ''}.`,
         });
       }
-    } else {
-      list.push({ tone: 'info', text: `No sales recorded in ${prevRange.label}, so month-over-month comparisons will start next month.` });
+      if (deltas.customers !== null && deltas.customers !== 0) {
+        findings.push({
+          kind: 'finding',
+          direction: deltas.customers > 0 ? 'up' : 'down',
+          title: `New customers ${formatPct(deltas.customers)}`,
+          detail: `${formatInt(current.newCustomers)} accounts opened, versus ${formatInt(previous.newCustomers)} in ${prevRange.short}.`,
+        });
+      }
     }
 
-    // --- Product movers ---
-    const risers: string[] = [];
+    const risers: BriefItem[] = [];
     const decliners: string[] = [];
     current.products.forEach((p) => {
       const prevUnits = previous.products.get(p.name)?.units || 0;
-      if (prevUnits > 0 && p.units > prevUnits) risers.push(`${p.name} (${prevUnits} → ${p.units} sold)`);
+      if (prevUnits > 0 && p.units > prevUnits) {
+        risers.push({
+          kind: 'finding',
+          direction: 'up',
+          title: p.name,
+          detail: `${p.units} sold, up from ${prevUnits}.`,
+        });
+      }
     });
     previous.products.forEach((p) => {
       const curUnits = current.products.get(p.name)?.units || 0;
-      if (p.units >= 2 && curUnits < p.units) decliners.push(`${p.name} (${p.units} → ${curUnits} sold)`);
+      if (p.units >= 2 && curUnits < p.units) {
+        decliners.push(`${p.name} (${p.units} → ${curUnits})`);
+      }
     });
+    findings.push(...risers.slice(0, 3));
 
-    risers.slice(0, 3).forEach((r) => list.push({ tone: 'up', text: `${r} is performing better than last month.` }));
     if (decliners.length > 0) {
-      list.push({
-        tone: 'action',
-        text: `Sales slowed for: ${decliners.slice(0, 3).join(', ')}. Consider promoting these (feature on the homepage, add to a bundle, or run a discount).`,
+      actions.push({
+        kind: 'action',
+        title: 'Revive slowing styles',
+        detail: `${decliners.slice(0, 3).join('; ')}. Feature on the homepage, pair with a top seller, or run a short discount.`,
       });
     }
 
-    // --- Fulfilment ---
     if (current.orderCount > 0) {
       const deliveredRate = (current.deliveredCount / current.orderCount) * 100;
       if (deliveredRate < 80) {
-        list.push({
-          tone: 'action',
-          text: `Only ${deliveredRate.toFixed(0)}% of paid orders were marked delivered. Review pending orders and update statuses — review-request emails only go out after delivery.`,
+        actions.push({
+          kind: 'action',
+          title: 'Clear pending deliveries',
+          detail: `${deliveredRate.toFixed(0)}% of paid orders are marked delivered. Review-request emails only send after delivery.`,
         });
       } else {
-        list.push({ tone: 'up', text: `${deliveredRate.toFixed(0)}% of paid orders were delivered.` });
+        findings.push({
+          kind: 'finding',
+          direction: 'up',
+          title: 'Fulfilment on track',
+          detail: `${deliveredRate.toFixed(0)}% of paid orders marked delivered.`,
+        });
       }
     }
 
-    // --- Promotion ideas from top sellers ---
     if (topProducts.length > 0) {
-      list.push({
-        tone: 'info',
-        text: `"${topProducts[0].name}" was your best seller (${topProducts[0].units} sold). Keep it in stock and consider pairing slower products with it as a bundle.`,
+      actions.push({
+        kind: 'action',
+        title: `Keep ${topProducts[0].name} in stock`,
+        detail: `Best seller at ${topProducts[0].units} units. Pair slower lines with it as a bundle.`,
       });
     }
 
-    // --- Conversion rate ---
+    if (deltas.aov !== null && deltas.aov < -5) {
+      actions.push({
+        kind: 'action',
+        title: 'Lift basket size',
+        detail: 'Try a free-delivery threshold or a two-item bundle on the product page.',
+      });
+    }
+
     if (!ga4Configured) {
-      list.push({
-        tone: 'action',
-        text: 'Conversion rate needs Google Analytics: add your GA4 Measurement ID under Settings → Tracking & Pixels, then visitor-to-purchase conversion appears in Google Analytics.',
-      });
-    } else {
-      list.push({
-        tone: 'info',
-        text: 'Conversion rate: open Google Analytics → Reports → Monetisation to see visitor-to-purchase conversion for this period.',
+      actions.push({
+        kind: 'action',
+        title: 'Add Google Analytics',
+        detail: 'Settings → Tracking & Pixels. Conversion rate then appears in GA4 Monetisation.',
       });
     }
 
-    return list;
-  }, [current, previous, deltas, aov, topProducts, ga4Configured, prevRange.label]);
+    return { findings, actions };
+  }, [current, previous, deltas, aov, prevAov, topProducts, ga4Configured, range.short, prevRange.short]);
 
   const summaryText = useMemo(() => {
     const lines = [
-      `Hy_stepper Monthly Report — ${range.label}`,
+      `Hy_stepper — ${range.label}`,
+      headline,
       '',
       `Orders: ${current.orderCount} (${formatPct(deltas.orders)} vs ${prevRange.label})`,
-      `Revenue (excl. delivery fees): GH₵${current.revenue.toFixed(2)} (${formatPct(deltas.revenue)})`,
-      `Average order value: GH₵${aov.toFixed(2)} (${formatPct(deltas.aov)})`,
-      `Delivered orders: ${current.deliveredCount}`,
+      `Revenue (excl. delivery): ${formatMoney(current.revenue)} (${formatPct(deltas.revenue)})`,
+      `Average order: ${formatMoney(aov)} (${formatPct(deltas.aov)})`,
+      `Delivered: ${current.deliveredCount}`,
       `New customers: ${current.newCustomers} (${formatPct(deltas.customers)})`,
       '',
-      'Top products:',
+      'Top products',
       ...(topProducts.length
-        ? topProducts.map((p, i) => `${i + 1}. ${p.name} — ${p.units} sold, GH₵${p.revenue.toFixed(2)}`)
+        ? topProducts.map((p, i) => `${i + 1}. ${p.name} — ${p.units} sold, ${formatMoney(p.revenue)}`)
         : ['(no product sales recorded)']),
       '',
-      'Insights & recommendations:',
-      ...insights.map((ins) => `- ${ins.text}`),
+      'Notes',
+      ...brief.findings.map((item) => `• ${item.title} — ${item.detail}`),
+      '',
+      'Next steps',
+      ...(brief.actions.length
+        ? brief.actions.map((item, i) => `${i + 1}. ${item.title}: ${item.detail}`)
+        : ['• No actions flagged this month.']),
     ];
     return lines.join('\n');
-  }, [range.label, prevRange.label, current, deltas, aov, topProducts, insights]);
+  }, [range.label, prevRange.label, headline, current, deltas, aov, topProducts, brief]);
 
   const copySummary = async () => {
     try {
       await navigator.clipboard.writeText(summaryText);
-      toast.success('Summary copied to clipboard');
+      toast.success('Summary copied');
     } catch {
       toast.error('Could not copy — select and copy manually');
     }
@@ -308,131 +375,184 @@ export default function MonthlyReportPage() {
     }
   };
 
-  const toneStyles: Record<Insight['tone'], { icon: string; classes: string }> = {
-    up: { icon: 'ri-arrow-up-circle-line', classes: 'bg-emerald-50 border-emerald-100 text-emerald-800' },
-    down: { icon: 'ri-arrow-down-circle-line', classes: 'bg-red-50 border-red-100 text-red-800' },
-    action: { icon: 'ri-lightbulb-flash-line', classes: 'bg-amber-50 border-amber-100 text-amber-800' },
-    info: { icon: 'ri-information-line', classes: 'bg-blue-50 border-blue-100 text-blue-800' },
-  };
-
-  const statCards = [
-    { label: 'Orders', value: current.orderCount.toString(), delta: deltas.orders, icon: 'ri-shopping-bag-line' },
-    { label: 'Revenue', value: `GH₵${current.revenue.toFixed(2)}`, delta: deltas.revenue, icon: 'ri-money-dollar-circle-line' },
-    { label: 'Avg Order Value', value: `GH₵${aov.toFixed(2)}`, delta: deltas.aov, icon: 'ri-price-tag-3-line' },
-    { label: 'New Customers', value: current.newCustomers.toString(), delta: deltas.customers, icon: 'ri-user-add-line' },
-  ];
+  const maxUnits = topProducts[0]?.units || 1;
+  const btnGhost =
+    'inline-flex items-center gap-1.5 h-9 px-3 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors duration-150';
+  const btnPrimary =
+    'inline-flex items-center gap-1.5 h-9 px-3 text-sm font-medium text-white bg-gray-900 hover:bg-gray-800 rounded-md transition-colors duration-150';
 
   return (
-    <div className="max-w-5xl mx-auto space-y-8 print:space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 print:block">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Monthly Optimisation Report</h1>
-          <p className="text-gray-600 mt-2">{range.label} — compared with {prevRange.label}</p>
+    <div className="max-w-6xl mx-auto print:max-w-none">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between pb-6 mb-6 border-b border-gray-200">
+        <div className="min-w-0">
+          <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-gray-400">Monthly report</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-gray-900 text-balance">{range.label}</h1>
+          <p className="mt-1 text-sm text-gray-500">Compared with {prevRange.label} · paid orders, delivery fees excluded</p>
         </div>
-        <div className="flex gap-2 print:hidden">
-          <button
-            type="button"
-            onClick={copySummary}
-            className="border border-gray-300 hover:bg-gray-50 font-semibold px-4 py-2 rounded-lg"
-          >
-            Copy Summary
+        <div className="flex flex-wrap items-center gap-1 print:hidden">
+          <button type="button" onClick={copySummary} className={btnGhost}>
+            <i className="ri-file-copy-line text-base" aria-hidden />
+            Copy
           </button>
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="border border-gray-300 hover:bg-gray-50 font-semibold px-4 py-2 rounded-lg"
-          >
+          <button type="button" onClick={() => window.print()} className={btnGhost}>
+            <i className="ri-printer-line text-base" aria-hidden />
             Print
           </button>
           {staffEmail && (
-            <button
-              type="button"
-              onClick={emailSummary}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-4 py-2 rounded-lg"
-            >
-              Email to Me
+            <button type="button" onClick={emailSummary} className={btnPrimary}>
+              <i className="ri-mail-send-line text-base" aria-hidden />
+              Email
             </button>
           )}
         </div>
-      </div>
+      </header>
 
       {loading ? (
-        <p className="text-gray-500">Loading report…</p>
-      ) : (
-        <>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {statCards.map((card) => (
-              <div key={card.label} className="bg-white rounded-xl border border-gray-200 p-5">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-                    <i className={`${card.icon} text-xl`}></i>
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs uppercase tracking-wide text-gray-500">{card.label}</p>
-                    <p className="text-xl font-bold text-gray-900 truncate">{card.value}</p>
-                    {card.delta !== null && card.delta !== 0 && (
-                      <p className={`text-xs font-semibold ${card.delta > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                        {formatPct(card.delta)} vs last month
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
+        <div className="space-y-8" aria-busy="true" aria-label="Loading report">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-gray-200 border border-gray-200">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="bg-white p-5 h-28 animate-pulse" />
             ))}
           </div>
+          <div className="h-24 bg-gray-100 animate-pulse rounded-sm" />
+        </div>
+      ) : (
+        <>
+          <section className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-gray-200 border border-gray-200 mb-8">
+            {[
+              { label: 'Orders', value: formatInt(current.orderCount), delta: deltas.orders },
+              { label: 'Revenue', value: formatMoney(current.revenue), delta: deltas.revenue },
+              { label: 'Avg. order', value: formatMoney(aov), delta: deltas.aov },
+              { label: 'New customers', value: formatInt(current.newCustomers), delta: deltas.customers },
+            ].map((card) => (
+              <div key={card.label} className="bg-white px-5 py-5">
+                <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-gray-400">{card.label}</p>
+                <p className="mt-2 text-[1.65rem] leading-none font-semibold tabular-nums tracking-tight text-gray-900">
+                  {card.value}
+                </p>
+                {card.delta !== null && card.delta !== 0 ? (
+                  <p className={`mt-2 text-xs tabular-nums ${card.delta > 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                    {card.delta > 0 ? '↑' : '↓'} {formatPct(card.delta)} vs {prevRange.short}
+                  </p>
+                ) : (
+                  <p className="mt-2 text-xs text-gray-400">vs {prevRange.short}</p>
+                )}
+              </div>
+            ))}
+          </section>
 
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h2 className="text-lg font-bold text-gray-900 mb-4">
-              <i className="ri-lightbulb-flash-line text-amber-500 mr-2"></i>
-              Insights &amp; Recommendations
-            </h2>
-            {insights.length === 0 ? (
-              <p className="text-gray-500 text-sm">Not enough data yet — insights appear once there are sales in two consecutive months.</p>
-            ) : (
-              <ul className="space-y-3">
-                {insights.map((ins, idx) => {
-                  const style = toneStyles[ins.tone];
-                  return (
-                    <li key={idx} className={`flex items-start gap-3 rounded-lg border p-3 text-sm ${style.classes}`}>
-                      <i className={`${style.icon} text-lg shrink-0 mt-0.5`}></i>
-                      <span>{ins.text}</span>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
+          <p className="text-[15px] leading-relaxed text-gray-800 text-pretty max-w-3xl mb-8">{headline}</p>
 
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h2 className="text-lg font-bold text-gray-900 mb-4">Top Products</h2>
-            {topProducts.length === 0 ? (
-              <p className="text-gray-500 text-sm">No product sales in this period.</p>
-            ) : (
-              <ol className="space-y-3">
-                {topProducts.map((p, idx) => {
-                  const prevUnits = previous.products.get(p.name)?.units || 0;
-                  return (
-                    <li key={p.name} className="flex justify-between gap-4 border-b border-gray-100 pb-2 last:border-0">
-                      <span className="font-medium text-gray-900">{idx + 1}. {p.name}</span>
-                      <span className="text-sm text-gray-600 shrink-0">
-                        {p.units} sold · GH₵{p.revenue.toFixed(2)}
-                        {prevUnits > 0 && (
-                          <span className={p.units >= prevUnits ? 'text-emerald-600' : 'text-red-600'}>
-                            {' '}({prevUnits} last month)
+          <div className="grid lg:grid-cols-5 gap-10 mb-10">
+            <section className="lg:col-span-3">
+              <h2 className="text-[11px] font-medium uppercase tracking-[0.16em] text-gray-400 mb-4">What changed</h2>
+              {brief.findings.length === 0 ? (
+                <p className="text-sm text-gray-500">Not enough history yet for a month-on-month read.</p>
+              ) : (
+                <ul className="divide-y divide-gray-100">
+                  {brief.findings.map((item) => (
+                    <li key={`${item.title}-${item.detail}`} className="py-3.5 first:pt-0">
+                      <div className="flex items-baseline justify-between gap-4">
+                        <p className="text-sm font-medium text-gray-900">{item.title}</p>
+                        {item.direction && (
+                          <span
+                            className={`text-[11px] tabular-nums shrink-0 ${
+                              item.direction === 'up' ? 'text-emerald-700' : 'text-rose-700'
+                            }`}
+                          >
+                            {item.direction === 'up' ? 'Up' : 'Down'}
                           </span>
                         )}
-                      </span>
+                      </div>
+                      <p className="mt-0.5 text-sm text-gray-500 text-pretty">{item.detail}</p>
                     </li>
-                  );
-                })}
-              </ol>
-            )}
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            <section className="lg:col-span-2 lg:border-l lg:border-gray-200 lg:pl-10">
+              <h2 className="text-[11px] font-medium uppercase tracking-[0.16em] text-gray-400 mb-4">Next steps</h2>
+              {brief.actions.length === 0 ? (
+                <p className="text-sm text-gray-500">Nothing flagged. Keep current merchandising.</p>
+              ) : (
+                <ol className="space-y-5">
+                  {brief.actions.map((item, idx) => (
+                    <li key={item.title} className="flex gap-3">
+                      <span className="text-[11px] font-medium tabular-nums text-gray-400 w-4 shrink-0 pt-0.5">
+                        {String(idx + 1).padStart(2, '0')}
+                      </span>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{item.title}</p>
+                        <p className="mt-0.5 text-sm text-gray-500 text-pretty">{item.detail}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </section>
           </div>
 
-          <div className="bg-gray-50 rounded-xl border border-gray-200 p-6 print:border-0 print:bg-white">
-            <h2 className="text-lg font-bold text-gray-900 mb-3">Executive Summary</h2>
-            <pre className="whitespace-pre-wrap text-sm text-gray-700 font-mono leading-relaxed">{summaryText}</pre>
-          </div>
+          <section>
+            <div className="flex items-baseline justify-between gap-4 mb-3">
+              <h2 className="text-[11px] font-medium uppercase tracking-[0.16em] text-gray-400">Top products</h2>
+              <p className="text-xs text-gray-400">By units sold</p>
+            </div>
+            {topProducts.length === 0 ? (
+              <p className="text-sm text-gray-500 py-6 border-t border-gray-200">No product sales in this period.</p>
+            ) : (
+              <div className="overflow-x-auto border-t border-gray-200">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-[11px] uppercase tracking-[0.12em] text-gray-400">
+                      <th className="font-medium py-3 pr-3 w-8">#</th>
+                      <th className="font-medium py-3 pr-4">Product</th>
+                      <th className="font-medium py-3 pr-4 text-right tabular-nums">Units</th>
+                      <th className="font-medium py-3 pr-4 text-right tabular-nums hidden sm:table-cell">Revenue</th>
+                      <th className="font-medium py-3 text-right tabular-nums hidden md:table-cell">{prevRange.short}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {topProducts.map((p, idx) => {
+                      const prevUnits = previous.products.get(p.name)?.units || 0;
+                      const width = Math.max(8, Math.round((p.units / maxUnits) * 100));
+                      return (
+                        <tr key={p.name} className="border-t border-gray-100">
+                          <td className="py-3 pr-3 tabular-nums text-gray-400">{idx + 1}</td>
+                          <td className="py-3 pr-4">
+                            <p className="font-medium text-gray-900">{p.name}</p>
+                            <div className="mt-1.5 h-px w-full bg-gray-100">
+                              <div className="h-px bg-gray-400" style={{ width: `${width}%` }} />
+                            </div>
+                          </td>
+                          <td className="py-3 pr-4 text-right tabular-nums text-gray-900">{formatInt(p.units)}</td>
+                          <td className="py-3 pr-4 text-right tabular-nums text-gray-600 hidden sm:table-cell">
+                            {formatMoney(p.revenue)}
+                          </td>
+                          <td className="py-3 text-right tabular-nums hidden md:table-cell">
+                            {prevUnits > 0 ? (
+                              <span className={p.units >= prevUnits ? 'text-emerald-700' : 'text-rose-700'}>
+                                {p.units >= prevUnits ? '+' : ''}
+                                {p.units - prevUnits}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          {!ga4Configured && (
+            <p className="mt-8 text-xs text-gray-400">
+              Conversion rate is not on this report until a GA4 Measurement ID is saved in Settings → Tracking &amp; Pixels.
+            </p>
+          )}
         </>
       )}
     </div>
